@@ -76,6 +76,9 @@ PINCH_RELEASE_MARGIN = 0.10
 # ...but while you are DRAGGING, only a clearly open hand counts as letting go.
 # Drags still dropping by accident? raise it (0.50). Drops feel slow? lower it (0.35).
 PINCH_DRAG_END = 0.40
+PINCH_DEBUG = True
+PINCH_CONFIRM_FRAMES = 3
+PINCH_MAX_SPEED = 2.0
 
 # Camera picture size and speed. A smaller picture is faster to analyze,
 # which means a higher frame rate and a less laggy cursor.

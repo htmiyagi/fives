@@ -146,11 +146,20 @@ class PinchDetector:
     firm pinch (gap 0.10) then ends at 0.20 instead of waiting for 0.30, which
     is what makes clicks feel immediate. After a release a new pinch needs the
     fingers to open past `start` first, so you can't re-trigger by accident.
+
+    confirm: the gap must stay below `start` for this many frames in a row before the pinch begins.
+    A tracking glitch (fast moves blur the hand) can put the thumb and index together for ONE frame;
+    confirm=2 ignores those. Costs one frame (~33 ms) before a real pinch starts.
+
+    allow_start=False (passed to update) blocks NEW pinches for that frame; a pinch already held carries on.
     """
 
     def __init__(self, start: float, end: float, release_margin: float = 0.0,
-                 hold_end: float = 0.0):
+                 hold_end: float = 0.0, confirm: int = 1):
         self.start = start
+        self.confirm = max(1, confirm)
+        self.below = 0            # frames in a row the gap has been below `start`
+        self.below_low = 1.0      # tightest gap during those frames
         self.end = end
         self.release_margin = release_margin
         self.hold_end = hold_end      # looser "let go" gap used while you are dragging
@@ -158,7 +167,7 @@ class PinchDetector:
         self.low = 1.0            # tightest gap seen during this pinch
         self.armed = True         # fingers have opened since the last pinch
 
-    def update(self, ratio: float, holding: bool = False) -> str | None:
+    def update(self, ratio: float, holding: bool = False, allow_start: bool = True) -> str | None:
         """Feed the latest ratio. Returns "down", "up", or None (no change).
 
         holding=True means the button is down (you're dragging). The grip is then
@@ -167,10 +176,18 @@ class PinchDetector:
         if not self.pinched:
             if ratio > self.start:
                 self.armed = True
+                self.below, self.below_low = 0, 1.0
+            if not allow_start:                         # e.g. the hand is moving too fast to be clicking
+                self.below, self.below_low = 0, 1.0
+                return None
             if self.armed and ratio < self.start:
-                self.pinched = True
-                self.low = ratio
-                return "down"
+                self.below += 1
+                self.below_low = min(self.below_low, ratio)
+                if self.below >= self.confirm:          # closed long enough: a real pinch
+                    self.pinched = True
+                    self.low = self.below_low
+                    self.below, self.below_low = 0, 1.0
+                    return "down"
             return None
         self.low = min(self.low, ratio)
         limit = self.end

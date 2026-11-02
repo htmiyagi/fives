@@ -20,11 +20,13 @@ Gestures in cursor mode:
       pinch = pen down at once, let go = pen up (no tail). For sketch pads.
 """
 
+import math
 import subprocess
 import sys
 import threading
 import time
 import urllib.request
+from collections import deque
 from pathlib import Path
 
 import cv2
@@ -491,7 +493,7 @@ def main() -> None:
     seq = 0
     landmarker = make_landmarker()
     pinch = g.PinchDetector(config.PINCH_START, config.PINCH_END, config.PINCH_RELEASE_MARGIN,
-                            config.PINCH_DRAG_END)
+                            config.PINCH_DRAG_END, getattr(config, "PINCH_CONFIRM_FRAMES", 1))
     smooth = g.OneEuroFilter(config.MIN_CUTOFF, config.BETA)
     glitch_guard = None          # ignore one-frame tracking glitches (config.GLITCH_GUARD)
     if getattr(config, "GLITCH_GUARD", False):
@@ -587,6 +589,11 @@ def main() -> None:
     last = time.monotonic()
     fps = 0.0
     detect_ms = 0.0      # how long hand-finding takes (smoothed)
+    pinch_debug = getattr(config, "PINCH_DEBUG", False)
+    pinch_frames = 0     # how many frames the current pinch has lasted (for PINCH_DEBUG)
+    pinch_start_speed = 0.0
+    max_pinch_speed = getattr(config, "PINCH_MAX_SPEED", 0)     # 0 = no speed rule
+    recent_tips = deque(maxlen=4)                               # (t, x, y): raw fingertip, last few frames
     pipe_ms = 0.0        # picture taken -> hand found (smoothed). This is OUR share of the lag.
 
     def to_px(pos):
@@ -805,8 +812,31 @@ def main() -> None:
                 # While drawing, the pen holds on until the pinch is clearly open (DRAW_HOLD_END);
                 # the tail is cut by the pen stopping early (DrawPen), not by lifting early.
                 pinch.hold_end = config.DRAW_HOLD_END if draw_mode else config.PINCH_DRAG_END
+                # How fast is the hand moving? (picture widths per second, over the last few frames)
+                recent_tips.append((t, *points[g.INDEX_TIP]))
+                hand_speed = 0.0
+                if len(recent_tips) >= 2 and recent_tips[-1][0] > recent_tips[0][0]:
+                    (t0, x0, y0), (t1, x1, y1) = recent_tips[0], recent_tips[-1]
+                    hand_speed = math.hypot(x1 - x0, y1 - y0) / (t1 - t0)
+                # Really fast moves blur the hand, and the blur can look like a pinch. Nobody clicks
+                # mid-swipe, so above PINCH_MAX_SPEED no NEW pinch can start (a held one carries on).
+                too_fast = max_pinch_speed > 0 and hand_speed > max_pinch_speed
+                was_pinched = pinch.pinched
                 pinch.update(ratio, holding=(engine.state == "down" or pen.down
-                                             or (scroll_mode and scroller.active)))
+                                             or (scroll_mode and scroller.active)),
+                             allow_start=not too_fast)
+                if pinch_debug:
+                    if too_fast and not pinch.pinched and ratio < config.PINCH_START:
+                        print(f"pinch blocked: hand moving {hand_speed:.2f}/s (limit {max_pinch_speed})")
+                    if pinch.pinched and not was_pinched:
+                        pinch_start_speed = hand_speed
+                    if pinch.pinched:
+                        pinch_frames += 1
+                    elif was_pinched:               # a pinch just ended: how long was it?
+                        tag = "   <- 1 frame: probably a glitch" if pinch_frames == 1 else ""
+                        print(f"pinch lasted {pinch_frames} frame{'s' if pinch_frames != 1 else ''}"
+                              f" (tightest gap {pinch.low:.2f}, hand speed {pinch_start_speed:.2f}/s){tag}")
+                        pinch_frames = 0
                 # Where were you pointing just BEFORE your finger dipped to pinch?
                 rewound = history.seconds_ago(config.REWIND_SECONDS, t) or tip
                 palm_rewound = palm_history.seconds_ago(config.REWIND_SECONDS, t) or palm
