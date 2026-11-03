@@ -70,6 +70,7 @@ A small frosted-glass window that floats over everything and shows the current S
 ### The sketch window
 
 <!-- 📍 GIF 5: Cmd+Esc opens the sketch window, draw a stroke, hold still to snap a shape. -->
+Mark up a PDF with your hand. Tap Cmd + Escape to open it, hold the pen key to draw, and hold still at the end of a stroke to snap it into a clean shape. Originals are never changed; marked-up copies are saved to ~/Documents/FIVES Notes.
 
 ### Tips
 
