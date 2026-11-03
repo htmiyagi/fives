@@ -588,6 +588,41 @@ class GlitchGuard:
         self.last, self.held = None, 0
 
 
+class LeadPredictor:
+    """Draws the cursor slightly AHEAD of your finger, to cancel out lag (from the Crosshair experiments).
+
+    The camera, the hand tracker and the smoothing all take time, so the cursor trails your real finger.
+    This guesses where the finger is going: its current speed x a short time ahead ("damped speed", the
+    simple guesser that was almost as good as the neural networks in Crosshair).
+
+      seconds  how far ahead to guess (0.04 = 40 ms). More = less lag, but more overshoot when you stop.
+      most     the furthest it may lead, as a fraction of the picture, so a glitch can't fling the cursor.
+
+    update() returns an offset (dx, dy) to add to the cursor. Works on camera positions (0..1).
+    """
+
+    def __init__(self, seconds=0.04, most=0.04):
+        self.seconds, self.most = seconds, most
+        self.prev = None
+        self.t = None
+        self.v = (0.0, 0.0)
+
+    def update(self, p, t):
+        if self.prev is not None and t > self.t:
+            dt = t - self.t
+            vx, vy = (p[0] - self.prev[0]) / dt, (p[1] - self.prev[1]) / dt
+            self.v = (0.5 * self.v[0] + 0.5 * vx, 0.5 * self.v[1] + 0.5 * vy)     # calm the speed a little
+        self.prev, self.t = p, t
+        dx, dy = self.v[0] * self.seconds, self.v[1] * self.seconds
+        size = (dx * dx + dy * dy) ** 0.5
+        if size > self.most:                                   # never lead by more than `most`
+            dx, dy = dx * self.most / size, dy * self.most / size
+        return dx, dy
+
+    def hand_gone(self):
+        self.prev, self.t, self.v = None, None, (0.0, 0.0)
+
+
 class PrismPointer:
     """Precise when slow, pinned when fast (the "PRISM" technique from VR research).
 

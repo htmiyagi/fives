@@ -23,6 +23,8 @@ I have always wanted to create an AI-based workflow where I am liberated from th
 - Visor-style HUD with live fps and lag readouts
 - Glide: the cursor is eased between camera frames and output at 120 Hz, so motion looks smooth instead of choppy
 - Precision pointer: the cursor slows down when your hand moves slowly for fine aiming, and catches up to your fingertip when you move fast
+- Lead: the cursor is drawn slightly *ahead* of your finger, along the way you're moving, to cancel out camera and tracking lag (press `l` to compare on/off)
+- Glitch-proof clicks: a pinch only counts after a few frames in a row, and no new pinch can start during a very fast movement, so motion blur can't cause phantom clicks
 - Sketch window: mark up a PDF with your hand (originals are never changed, marked-up copies are saved to `~/Documents/FIVES Notes`)
 - Snap pens: draw a shape and hold still, and FIVES redraws it as a clean shape
 - Draw mode for sketch pads and drawing apps
@@ -30,6 +32,7 @@ I have always wanted to create an AI-based workflow where I am liberated from th
 - Brain: optional local chat model that can use tools on the Mac
 
 **Planned**
+- Swap the lead's simple "damped speed" guess for the CNN from [Crosshair](https://github.com/yagiht/crosshair), once there's more training data
 - Calendar, AI, and email windows that flick into view, so small tasks don't need new tabs
 - Volume dial and keyboard shortcuts that run tools, with no model needed
 - Voice commands
@@ -37,7 +40,7 @@ I have always wanted to create an AI-based workflow where I am liberated from th
 
 ## Hand mouse: gestures
 
-Press `c` in the camera window to turn cursor control on or off. Press `h` to switch the window between the camera and a hand-only view, and `[` / `]` to turn the blue tint down or up. Press `q` to quit.
+Press `c` in the camera window to turn cursor control on or off, and `l` to turn the lead on or off. Press `h` to switch the window between the camera and a hand-only view, and `[` / `]` to turn the blue tint down or up. Press `q` to quit.
 
 The camera window is a visor-style HUD (`hud.py`): an angled helmet frame with the camera in a viewport in the middle (natural colors with a cool blue tint, drawn at double resolution so text is sharp), your hand's wiring, a bracket on the cursor spot, the current mode, pinch gap, and live fps/lag readouts. Set `HUD = False` in `config.py` for the plain camera picture. Tuning: `HUD_STRENGTH` (blue tint), `HUD_SCALE` (1 = faster, 2 = sharper), `HUD_DENOISE`, `HUD_GLOW`.
 
@@ -122,6 +125,17 @@ Everything adjustable is in `config.py`, with a comment next to each setting say
 - `SKETCH`, `SKETCH_FOLDER`, `SKETCH_SMOOTH_PASSES`, `SKETCH_LIVE_FOLLOW`: the sketch window
 - `SNAP`, `SNAP_HOLD_SECONDS`, `SNAP_HOLD_RADIUS`: hold-to-snap shapes
 - `FLICK_HIDE`: which sideways flick hides the music window
+- `LEAD`, `LEAD_SECONDS`, `LEAD_MOST`: the lead. `LEAD_SECONDS` is how far ahead the cursor is drawn (0.04 = 40 ms): raise it if the cursor still feels like it trails, lower it if it overshoots when you stop
+- `PINCH_CONFIRM_FRAMES`, `PINCH_MAX_SPEED`: phantom-click protection. More confirm frames = fewer accidental clicks but slightly later real ones. `PINCH_DEBUG = True` prints how long each pinch lasted
+- `GLITCH_GUARD`, `GLITCH_JUMP`: ignore one-frame tracking jumps
+
+### Where the lead comes from
+
+The lead is a result from [Crosshair](https://github.com/yagiht/crosshair), my motion-prediction experiments. There, the
+strongest simple predictor was *damped speed* (the finger's current speed times one number), and a small CNN on
+fingertip, knuckle, and wrist motion beat it by 15% on held-out data. FIVES ships the damped-speed version for now:
+it's one line of math, needs no model, and already makes fast moves feel noticeably less laggy. The CNN isn't in FIVES
+yet. Crosshair's learning curve shows it still improving as data grows, so it goes in after more (and more varied) data.
 
 ## Project layout
 

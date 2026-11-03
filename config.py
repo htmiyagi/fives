@@ -301,6 +301,13 @@ GLIDE = True
 GLIDE_SECONDS = 0       # how long each slide takes. 0 = automatic (one camera frame).
 GLIDE_HZ = 120          # steps per second (your screen's refresh rate is a good choice)
 
+# ---- LEAD ---------------------------------------------------------------------------------------
+# The cursor trails your finger a little (camera + tracking + smoothing all take time). Lead draws it
+# slightly AHEAD, along the way you're moving, to cancel that out. Only while pointing, not dragging,
+# scrolling or drawing. Press l in the camera window to flip it on/off and compare.
+LEAD = True
+LEAD_SECONDS = 0.04     # how far ahead (0.04 = 40 ms). Still feels laggy? 0.06. Overshoots when you stop? 0.025
+LEAD_MOST = 0.04        # the furthest it may lead, as a fraction of the picture
 # ---- GLITCH GUARD ------------------------------------------------------------------------------
 # Sometimes the tracker briefly puts your fingertip somewhere it can't be (dark room, finger turned
 # away). If it "teleports" more than GLITCH_JUMP of the picture in one frame, keep the last good hand

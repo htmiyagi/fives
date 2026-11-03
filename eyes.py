@@ -503,6 +503,10 @@ def main() -> None:
         accel = g.PrismPointer(getattr(config, "PRECISE_SPEED", 0.35), getattr(config, "PRECISE_MIN_SCALE", 0.35),
                                getattr(config, "PRECISE_CATCHUP_SPEED", 0.9),
                                config.CURSOR_MARGIN, 1 - config.CURSOR_MARGIN)
+    lead = None                  # draw the cursor a little ahead of your finger (config.LEAD), l toggles it
+    if getattr(config, "LEAD", False):
+        lead = g.LeadPredictor(getattr(config, "LEAD_SECONDS", 0.04), getattr(config, "LEAD_MOST", 0.04))
+    lead_on = lead is not None
     palm_smooth = g.OneEuroFilter(config.MIN_CUTOFF, config.BETA)   # same, for the knuckles
     history = g.PositionHistory()
     palm_history = g.PositionHistory()      # where the knuckles were (for the draw pen)
@@ -768,6 +772,7 @@ def main() -> None:
                     off = accel.update(tip, t, frozen, passthrough=key_draw and same_scale)
                     tip = (tip[0] + off[0], tip[1] + off[1])
                 history.add(t, *tip)
+                lead_off = lead.update(tip, t) if lead is not None else (0.0, 0.0)
                 # Your fingertip dips when you pinch, but your knuckles don't. So we
                 # judge "did the HAND move?" (for dragging) by the knuckles.
                 knuckles = ((points[g.INDEX_KNUCKLE][0] + points[g.MIDDLE_KNUCKLE][0]) / 2,
@@ -926,6 +931,10 @@ def main() -> None:
                     if mouse.brake_hit():
                         print("Emergency brake: the mouse hit a screen corner. Stopping.")
                         break
+                    # Lead: only while plainly pointing (not dragging, scrolling or drawing, where it would wobble).
+                    if (lead_on and lead is not None and engine.state == "idle" and not pinch.pinched
+                            and not scroll_mode and not draw_mode and not key_draw):
+                        aim = (aim[0] + lead_off[0], aim[1] + lead_off[1])
                     sx, sy = to_px(aim)
                     if (sx, sy) != last_sent and not palm_flat:     # a real mouse is silent when it's still
                         cursor_to(sx, sy, engine.state == "down" or pen.down or keypen.down)
@@ -960,6 +969,8 @@ def main() -> None:
                     glitch_guard.reset()
                 if accel is not None:
                     accel.hand_gone()
+                if lead is not None:
+                    lead.hand_gone()
                 history.clear()
                 palm_history.clear()
                 pixels = scroller.update(stamp, False, 0.0)    # a glide keeps going without the hand
@@ -1014,6 +1025,9 @@ def main() -> None:
                 print(f"hologram: {'ON' if hud.toggle_holo() > 0 else 'OFF'}")
             if key in (ord("["), ord("]")) and hud is not None:
                 print(f"blue tint: {hud.nudge(0.1 if key == ord(']') else -0.1):.0%}")
+            if key == ord("l") and lead is not None:
+                lead_on = not lead_on
+                print(f"lead (cursor ahead of your finger): {'ON' if lead_on else 'OFF'}")
             if key == ord("c"):
                 cursor_on = not cursor_on
                 last_sent = None
