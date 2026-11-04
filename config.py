@@ -79,6 +79,11 @@ PINCH_DRAG_END = 0.40
 PINCH_DEBUG = True
 PINCH_CONFIRM_FRAMES = 3
 PINCH_MAX_SPEED = 2.0
+# Depth check: the thumb and index tips must be at about the same distance from the camera to count as a pinch
+# (stops "thumb hidden behind the finger" fake pinches). Uses MediaPipe's depth guess, which is a bit noisy.
+# With PINCH_DEBUG on, each pinch prints its "depth gap": real pinches should be small. Set this a bit above them.
+# Real pinches getting blocked? raise it. Fakes still getting through? lower it. 0 = off.
+PINCH_MAX_DEPTH = 0.35
 
 # Camera picture size and speed. A smaller picture is faster to analyze,
 # which means a higher frame rate and a less laggy cursor.
@@ -315,3 +320,16 @@ LEAD_MOST = 0.04        # the furthest it may lead, as a fraction of the picture
 GLITCH_GUARD = True
 GLITCH_JUMP = 0.2            # fraction of the picture (0.2 = 20%). Lower catches more, but may ignore real flicks
 GLITCH_HOLD_FRAMES = 2
+
+# ---- CNN LEAD + DEPTH CHECK (added Nov 4) ------------------------------------------------------
+# The Crosshair CNN as a lead (github.com/yagiht/crosshair). Press l to cycle: OFF -> DAMPED -> CNN.
+LEAD_CNN = True
+LEAD_CNN_PATH = "lead_model/deploy_cnn_1.pt"
+LEAD_CNN_SCALE = 1.0    # 1.0 = the model's own guess (~33 ms ahead). Feels laggy? 1.2. Overshoots? 0.8
+LEAD_START = "cnn"   # which mode FIVES starts in: "off", "damped", or "cnn"
+# Depth check: thumb and index tips must be at about the same depth to count as a pinch. 0 = off.
+PINCH_MAX_DEPTH = 0.35
+# CNN lead fade-out: no push while your hand is still, so it's as steady as no lead.
+LEAD_CNN_STILL = 0.04   # below this hand speed: no push. Still jittery when still? raise it (0.06)
+LEAD_CNN_FULL = 0.07     # above this: the full push. Feels laggy when starting a move? lower it (0.12)
+LEAD_CNN_CALM = 1.0     # smooths the push itself (1 = no smoothing, lower = calmer but a touch laggier)

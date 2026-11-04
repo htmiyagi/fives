@@ -35,6 +35,14 @@ def hand_size(points) -> float:
     return distance(points[WRIST], points[MIDDLE_KNUCKLE]) or 1e-6
 
 
+def depth_gap(zs, points) -> float:
+    """How far apart the thumb tip and index tip are in DEPTH (toward/away from the camera), divided by hand size.
+    zs = MediaPipe's z for each of the 21 points (its guess at depth; noisier than x and y).
+    Two fingertips that really touch are at about the same depth, so a big number = not a real pinch
+    (for example, the thumb hidden behind the finger)."""
+    return abs(zs[THUMB_TIP] - zs[INDEX_TIP]) / hand_size(points)
+
+
 def pinch_ratio(points) -> float:
     """Thumb-to-index gap divided by hand size. Small number = pinching."""
     return distance(points[THUMB_TIP], points[INDEX_TIP]) / hand_size(points)

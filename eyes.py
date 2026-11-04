@@ -506,7 +506,22 @@ def main() -> None:
     lead = None                  # draw the cursor a little ahead of your finger (config.LEAD), l toggles it
     if getattr(config, "LEAD", False):
         lead = g.LeadPredictor(getattr(config, "LEAD_SECONDS", 0.04), getattr(config, "LEAD_MOST", 0.04))
-    lead_on = lead is not None
+    cnn = None                   # the Crosshair CNN as a lead (config.LEAD_CNN); needs PyTorch and the model file
+    if getattr(config, "LEAD_CNN", False):
+        try:
+            from cnn_lead import CNNLead
+            cnn = CNNLead(Path(__file__).parent / config.LEAD_CNN_PATH,
+                          getattr(config, "LEAD_CNN_SCALE", 1.0), getattr(config, "LEAD_MOST", 0.04),
+                          still=getattr(config, "LEAD_CNN_STILL", 0.04), full=getattr(config, "LEAD_CNN_FULL", 0.2),
+                          calm=getattr(config, "LEAD_CNN_CALM", 0.5))
+        except Exception as err:     # no torch, or no model file: keep going without it
+            print(f"CNN lead not loaded ({err}). Damped-speed lead still works.")
+    # The l key cycles through these: no lead, damped speed, the CNN (only the ones that are available).
+    lead_modes = ["off"] + (["damped"] if lead is not None else []) + (["cnn"] if cnn is not None else [])
+    start_mode = getattr(config, "LEAD_START", "damped")
+    lead_mode = start_mode if start_mode in lead_modes else lead_modes[-1]
+    if len(lead_modes) > 1:
+        print(f"lead: {lead_mode.upper()}   (press l to cycle: {' -> '.join(m.upper() for m in lead_modes)})")
     palm_smooth = g.OneEuroFilter(config.MIN_CUTOFF, config.BETA)   # same, for the knuckles
     history = g.PositionHistory()
     palm_history = g.PositionHistory()      # where the knuckles were (for the draw pen)
@@ -597,6 +612,8 @@ def main() -> None:
     pinch_frames = 0     # how many frames the current pinch has lasted (for PINCH_DEBUG)
     pinch_start_speed = 0.0
     max_pinch_speed = getattr(config, "PINCH_MAX_SPEED", 0)     # 0 = no speed rule
+    max_pinch_depth = getattr(config, "PINCH_MAX_DEPTH", 0)     # 0 = no depth rule
+    pinch_start_depth = 0.0
     recent_tips = deque(maxlen=4)                               # (t, x, y): raw fingertip, last few frames
     pipe_ms = 0.0        # picture taken -> hand found (smoothed). This is OUR share of the lag.
 
@@ -759,6 +776,7 @@ def main() -> None:
             if result.hand_landmarks:
                 hand = result.hand_landmarks[0]         # first hand found
                 points = [(lm.x, lm.y) for lm in hand]  # 21 (x, y) pairs, 0..1
+                zs = [lm.z for lm in hand]              # MediaPipe's depth guess for each point (used for pinches)
                 if glitch_guard is not None:
                     points = glitch_guard.update(points)    # a one-frame "teleport" is a tracking glitch: ignore it
                 h, w = frame.shape[:2]
@@ -773,6 +791,7 @@ def main() -> None:
                     tip = (tip[0] + off[0], tip[1] + off[1])
                 history.add(t, *tip)
                 lead_off = lead.update(tip, t) if lead is not None else (0.0, 0.0)
+                cnn_off = cnn.update(points, t) if cnn is not None else (0.0, 0.0)   # fed every frame, so its history stays fresh
                 # Your fingertip dips when you pinch, but your knuckles don't. So we
                 # judge "did the HAND move?" (for dragging) by the knuckles.
                 knuckles = ((points[g.INDEX_KNUCKLE][0] + points[g.MIDDLE_KNUCKLE][0]) / 2,
@@ -826,21 +845,29 @@ def main() -> None:
                 # Really fast moves blur the hand, and the blur can look like a pinch. Nobody clicks
                 # mid-swipe, so above PINCH_MAX_SPEED no NEW pinch can start (a held one carries on).
                 too_fast = max_pinch_speed > 0 and hand_speed > max_pinch_speed
+                # Fingertips that really touch are at about the same depth. If the thumb and index tips overlap
+                # on camera but are far apart in depth (thumb behind the finger), it isn't a pinch.
+                depth = g.depth_gap(zs, points)
+                too_deep = max_pinch_depth > 0 and depth > max_pinch_depth
                 was_pinched = pinch.pinched
                 pinch.update(ratio, holding=(engine.state == "down" or pen.down
                                              or (scroll_mode and scroller.active)),
-                             allow_start=not too_fast)
+                             allow_start=not too_fast and not too_deep)
                 if pinch_debug:
                     if too_fast and not pinch.pinched and ratio < config.PINCH_START:
                         print(f"pinch blocked: hand moving {hand_speed:.2f}/s (limit {max_pinch_speed})")
+                    elif too_deep and not pinch.pinched and ratio < config.PINCH_START:
+                        print(f"pinch blocked: thumb and index {depth:.2f} apart in depth (limit {max_pinch_depth})")
                     if pinch.pinched and not was_pinched:
                         pinch_start_speed = hand_speed
+                        pinch_start_depth = depth
                     if pinch.pinched:
                         pinch_frames += 1
                     elif was_pinched:               # a pinch just ended: how long was it?
                         tag = "   <- 1 frame: probably a glitch" if pinch_frames == 1 else ""
                         print(f"pinch lasted {pinch_frames} frame{'s' if pinch_frames != 1 else ''}"
-                              f" (tightest gap {pinch.low:.2f}, hand speed {pinch_start_speed:.2f}/s){tag}")
+                              f" (tightest gap {pinch.low:.2f}, hand speed {pinch_start_speed:.2f}/s,"
+                              f" depth gap {pinch_start_depth:.2f}){tag}")
                         pinch_frames = 0
                 # Where were you pointing just BEFORE your finger dipped to pinch?
                 rewound = history.seconds_ago(config.REWIND_SECONDS, t) or tip
@@ -932,9 +959,10 @@ def main() -> None:
                         print("Emergency brake: the mouse hit a screen corner. Stopping.")
                         break
                     # Lead: only while plainly pointing (not dragging, scrolling or drawing, where it would wobble).
-                    if (lead_on and lead is not None and engine.state == "idle" and not pinch.pinched
+                    if (lead_mode != "off" and engine.state == "idle" and not pinch.pinched
                             and not scroll_mode and not draw_mode and not key_draw):
-                        aim = (aim[0] + lead_off[0], aim[1] + lead_off[1])
+                        off = cnn_off if lead_mode == "cnn" else lead_off
+                        aim = (aim[0] + off[0], aim[1] + off[1])
                     sx, sy = to_px(aim)
                     if (sx, sy) != last_sent and not palm_flat:     # a real mouse is silent when it's still
                         cursor_to(sx, sy, engine.state == "down" or pen.down or keypen.down)
@@ -971,6 +999,8 @@ def main() -> None:
                     accel.hand_gone()
                 if lead is not None:
                     lead.hand_gone()
+                if cnn is not None:
+                    cnn.hand_gone()
                 history.clear()
                 palm_history.clear()
                 pixels = scroller.update(stamp, False, 0.0)    # a glide keeps going without the hand
@@ -1025,9 +1055,9 @@ def main() -> None:
                 print(f"hologram: {'ON' if hud.toggle_holo() > 0 else 'OFF'}")
             if key in (ord("["), ord("]")) and hud is not None:
                 print(f"blue tint: {hud.nudge(0.1 if key == ord(']') else -0.1):.0%}")
-            if key == ord("l") and lead is not None:
-                lead_on = not lead_on
-                print(f"lead (cursor ahead of your finger): {'ON' if lead_on else 'OFF'}")
+            if key == ord("l") and len(lead_modes) > 1:
+                lead_mode = lead_modes[(lead_modes.index(lead_mode) + 1) % len(lead_modes)]
+                print(f"lead: {lead_mode.upper()}")
             if key == ord("c"):
                 cursor_on = not cursor_on
                 last_sent = None
