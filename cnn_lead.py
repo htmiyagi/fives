@@ -1,6 +1,6 @@
 """The Crosshair CNN as a lead: predicts where your fingertip will be one camera frame from now.
 
-Trained in Crosshair (lessons 16-27, github.com/yagiht/crosshair). On held-out games it was about 17% more
+Trained in Crosshair (lessons 16-27, github.com/htmiyagi/crosshair). On held-out games it was about 17% more
 accurate than the simple damped-speed lead, and its predictions shook about 40% less, because it learned to
 follow real movement and ignore tracking jitter, while damped speed throws every wobble forward.
 

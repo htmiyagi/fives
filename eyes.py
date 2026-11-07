@@ -516,8 +516,19 @@ def main() -> None:
                           calm=getattr(config, "LEAD_CNN_CALM", 0.5))
         except Exception as err:     # no torch, or no model file: keep going without it
             print(f"CNN lead not loaded ({err}). Damped-speed lead still works.")
-    # The l key cycles through these: no lead, damped speed, the CNN (only the ones that are available).
-    lead_modes = ["off"] + (["damped"] if lead is not None else []) + (["cnn"] if cnn is not None else [])
+    steady = None                # the STEADY CNN: same model, trained not to shake (Crosshair lesson 29)
+    if getattr(config, "LEAD_CNN", False) and getattr(config, "LEAD_STEADY_PATH", "lead_model/steady_cnn_0.3.pt"):
+        try:
+            from cnn_lead import CNNLead
+            steady = CNNLead(Path(__file__).parent / getattr(config, "LEAD_STEADY_PATH", "lead_model/steady_cnn_0.3.pt"),
+                             getattr(config, "LEAD_CNN_SCALE", 1.0), getattr(config, "LEAD_MOST", 0.04),
+                             still=getattr(config, "LEAD_CNN_STILL", 0.04), full=getattr(config, "LEAD_CNN_FULL", 0.2),
+                             calm=getattr(config, "LEAD_CNN_CALM", 0.5))
+        except Exception as err:
+            print(f"STEADY lead not loaded ({err}).")
+    # The l key cycles through these: no lead, damped speed, the CNN, the steady CNN (only the ones available).
+    lead_modes = (["off"] + (["damped"] if lead is not None else []) + (["cnn"] if cnn is not None else [])
+                  + (["steady"] if steady is not None else []))
     start_mode = getattr(config, "LEAD_START", "damped")
     lead_mode = start_mode if start_mode in lead_modes else lead_modes[-1]
     if len(lead_modes) > 1:
@@ -792,6 +803,7 @@ def main() -> None:
                 history.add(t, *tip)
                 lead_off = lead.update(tip, t) if lead is not None else (0.0, 0.0)
                 cnn_off = cnn.update(points, t) if cnn is not None else (0.0, 0.0)   # fed every frame, so its history stays fresh
+                steady_off = steady.update(points, t) if steady is not None else (0.0, 0.0)
                 # Your fingertip dips when you pinch, but your knuckles don't. So we
                 # judge "did the HAND move?" (for dragging) by the knuckles.
                 knuckles = ((points[g.INDEX_KNUCKLE][0] + points[g.MIDDLE_KNUCKLE][0]) / 2,
@@ -961,7 +973,7 @@ def main() -> None:
                     # Lead: only while plainly pointing (not dragging, scrolling or drawing, where it would wobble).
                     if (lead_mode != "off" and engine.state == "idle" and not pinch.pinched
                             and not scroll_mode and not draw_mode and not key_draw):
-                        off = cnn_off if lead_mode == "cnn" else lead_off
+                        off = {"cnn": cnn_off, "steady": steady_off}.get(lead_mode, lead_off)
                         aim = (aim[0] + off[0], aim[1] + off[1])
                     sx, sy = to_px(aim)
                     if (sx, sy) != last_sent and not palm_flat:     # a real mouse is silent when it's still
@@ -1001,6 +1013,8 @@ def main() -> None:
                     lead.hand_gone()
                 if cnn is not None:
                     cnn.hand_gone()
+                if steady is not None:
+                    steady.hand_gone()
                 history.clear()
                 palm_history.clear()
                 pixels = scroller.update(stamp, False, 0.0)    # a glide keeps going without the hand

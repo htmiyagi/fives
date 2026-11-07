@@ -11,7 +11,7 @@ It may ask for your Mac password once (that's Homebrew installing). Typing a pas
 command -v brew >/dev/null || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
 eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; \
 brew install python@3.12 git && \
-git clone https://github.com/yagiht/fives.git ~/fives && \
+git clone https://github.com/htmiyagi/fives.git ~/fives && \
 cd ~/fives && \
 "$(brew --prefix)/bin/python3.12" -m venv .venv && \
 source .venv/bin/activate && \

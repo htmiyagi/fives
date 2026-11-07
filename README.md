@@ -32,7 +32,7 @@ I have always wanted to create an AI-based workflow where I am liberated from th
 - Brain: optional local chat model that can use tools on the Mac
 
 **Planned**
-- Swap the lead's simple "damped speed" guess for the CNN from [Crosshair](https://github.com/yagiht/crosshair), once there's more training data
+- Swap the lead's simple "damped speed" guess for the CNN from [Crosshair](https://github.com/htmiyagi/crosshair), once there's more training data
 - Calendar, AI, and email windows that flick into view, so small tasks don't need new tabs
 - Volume dial and keyboard shortcuts that run tools, with no model needed
 - Voice commands
@@ -83,7 +83,7 @@ Mark up a PDF with your hand. Tap Cmd + Escape to open it, hold the pen key to d
 Requires macOS and Python 3.12.
 
 ```
-git clone https://github.com/yagiht/fives.git
+git clone https://github.com/htmiyagi/fives.git
 cd fives
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -132,7 +132,7 @@ Everything adjustable is in `config.py`, with a comment next to each setting say
 
 ### Where the lead comes from
 
-The lead is a result from [Crosshair](https://github.com/yagiht/crosshair), my motion-prediction experiments. There, the
+The lead is a result from [Crosshair](https://github.com/htmiyagi/crosshair), my motion-prediction experiments. There, the
 strongest simple predictor was *damped speed* (the finger's current speed times one number), and a small CNN on
 fingertip, knuckle, and wrist motion beat it by 15% on held-out data. FIVES ships the damped-speed version for now:
 it's one line of math, needs no model, and already makes fast moves feel noticeably less laggy. The CNN isn't in FIVES
