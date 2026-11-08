@@ -80,7 +80,23 @@ Mark up a PDF with your hand. Tap Cmd + Escape to open it, hold the pen key to d
 
 ## Setup
 
-Requires macOS and Python 3.12.
+**For anyone (one line, no Homebrew, no password):** open Terminal and paste
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/htmiyagi/fives/main/install.sh | bash
+```
+
+A window asks **Install FIVES?** After about 5 minutes there's a **FIVES** icon on your Desktop.
+Double-click it to open the FIVES window:
+
+- **ENGAGE** starts hand tracking (**DISENGAGE** stops it)
+- **PERMISSIONS** pops up Apple's own boxes for Camera, Accessibility and Input Monitoring and opens the right
+  Settings page for anything still off (turn **Terminal** on, then quit Terminal with Cmd + Q and reopen FIVES)
+- **SETTINGS** opens `config.py`, **UPDATE** downloads the newest version (your settings are kept)
+
+Step by step, with fixes for common problems: [INSTALL.md](INSTALL.md).
+
+**For development** (macOS, Python 3.12):
 
 ```
 git clone https://github.com/htmiyagi/fives.git
@@ -88,18 +104,10 @@ cd fives
 python3.12 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-python eyes.py
+python launcher.py        # the FIVES window (or: python eyes.py to start hand tracking directly)
 ```
 
 The hand-tracking model (a few MB) downloads automatically the first time you run `eyes.py`.
-
-macOS will ask for permissions. Allow them for Terminal (or whichever app you run Python from):
-
-- **Camera**: so FIVES can see your hand
-- **Accessibility**: so it can move the mouse and click
-- **Input Monitoring**: so it can notice the Cmd + Shift scroll hotkey from any app
-
-(System Settings > Privacy & Security). Restart the program after changing a permission.
 
 ## The brain (optional)
 
@@ -142,9 +150,15 @@ yet. Crosshair's learning curve shows it still improving as data grows, so it go
 
 | File | Purpose |
 | --- | --- |
+| `launcher.py` | The FIVES window: engage/disengage, permissions, settings, update |
+| `install.sh` | The one-line installer (uv for Python, no Homebrew) and the Desktop icon |
+| `permissions.py` | Checks and asks for Camera, Accessibility and Input Monitoring |
 | `eyes.py` | Webcam loop and mouse control, including the `Glider` that smooths the cursor between camera frames |
 | `hud.py` | The visor HUD drawn in the camera window (camera and hand-only views) |
 | `gestures.py` | Hand geometry and logic: pinch, smoothing, click, drag, scroll, and the open-palm flick. No camera code, so it stays testable |
+| `cnn_lead.py` | The cursor lead from Crosshair (CNN and STEADY models in `lead_model/`) |
+| `sketch.py` | The sketch window (draw mode): pages, PDFs, REC for recording letters, the PEN button |
+| `grip_pen.py`, `letter_rec.py` | Experiments: writing with an invisible pen grip; recording air-written letters |
 | `panel.py` | The floating music window |
 | `panel_logic.py` | Where things are in the music window and what a click means |
 | `spotify.py` | Talks to the Spotify desktop app (play/pause, skip, volume, seek) |

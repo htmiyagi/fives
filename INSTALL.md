@@ -15,10 +15,11 @@ That's the only time you type anything.
 
 ## 2. The FIVES window
 
-From now on, **double-click FIVES on your Desktop**. You get a small window:
-**Start FIVES**, **Set up permissions**, **Settings**, **Update**.
+From now on, **double-click FIVES on your Desktop**. You get the FIVES window:
+**ENGAGE** (start hand tracking), **PERMISSIONS**, **SETTINGS**, **UPDATE**, **FOLDER**.
+Drag the window's glass to move it.
 
-The first time, click **Set up permissions**. FIVES pops up Apple's own boxes and opens the right
+The first time, click **PERMISSIONS**. FIVES pops up Apple's own boxes and opens the right
 Settings page for each one, so you just turn **Terminal** on:
 
 - **Camera**: so FIVES can see your hand
@@ -26,7 +27,7 @@ Settings page for each one, so you just turn **Terminal** on:
 - **Input Monitoring**: so the keyboard shortcuts work from any app
 
 Then **quit Terminal completely (Cmd + Q)** and double-click FIVES again. macOS only applies new
-permissions after a restart.
+permissions after a restart. When all three say **GRANTED**, press **ENGAGE**.
 
 ## Using it
 
@@ -39,7 +40,7 @@ permissions after a restart.
 
 ## Updating
 
-Click **Update** in the FIVES window (or paste the command from step 1 again). Your settings are kept.
+Click **UPDATE** in the FIVES window (or paste the command from step 1 again). Your settings are kept.
 
 ## If something goes wrong
 
