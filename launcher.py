@@ -289,7 +289,9 @@ def press(name):
         missing = permissions.request_all()
         check_permissions()
         S.msg = ("> ALL PERMISSIONS GRANTED." if not missing else
-                 "> TURN 'TERMINAL' ON IN SETTINGS, THEN CMD+Q TERMINAL AND REOPEN FIVES.")
+                 "> TURN 'TERMINAL' ON IN SETTINGS, THEN CMD+Q TERMINAL AND REOPEN FIVES."
+                 if len(missing) > 1 or missing != ["Input Monitoring"] else
+                 "> INPUT MONITORING: TURN 'TERMINAL' ON, THEN CMD+Q TERMINAL. IT SHOWS AFTER A RESTART.")
     elif name == "settings":
         subprocess.run(["open", "-e", str(HERE / "config.py")])
     elif name == "folder":

@@ -76,14 +76,20 @@ def check(prompt):
 
 
 def request_all():
-    """For the launcher's button: pop up Apple's boxes, open Settings for anything still off.
-    Returns the names still missing (they need a switch flipped, then Terminal restarted)."""
-    if camera_status() == "ask":
-        ask_camera()
-    status = check(prompt=True)
-    missing = [name for name, ok in status.items() if ok is False]
+    """For the launcher's PERMISSIONS button: open System Settings straight to every permission that's off.
+    (It also quietly asks macOS once, which puts Terminal into each list, so it's one switch to flip.)
+    Returns the names still missing."""
+    status = check(prompt=False)
+    missing = [name for name, ok in status.items() if not ok]
+    if "Accessibility" in missing:
+        accessibility_on(prompt=True)          # adds Terminal to the Accessibility list
+    if "Input Monitoring" in missing:
+        input_monitoring_on(prompt=True)       # adds Terminal to the Input Monitoring list
     for name in missing:
-        subprocess.run(["open", SETTINGS[name]])
+        if name == "Camera" and camera_status() == "ask":
+            ask_camera()                       # the camera has no list until macOS asks once
+        else:
+            subprocess.run(["open", SETTINGS[name]])
     return missing
 
 
