@@ -15,8 +15,10 @@ Your original PDF is never changed. SAVE writes a marked-up copy into ~/Document
 SHARE saves, then shows the file in Finder (right-click it > Share > AirDrop / Messages / Mail).
 
 Controlled by eyes.py through stdin, one command per line:
-  show | hide | toggle | quit | snap 1 | snap 0 | open /path/to/file.pdf
+  show | hide | toggle | quit | snap 1 | snap 0 | open /path/to/file.pdf | prompt <text>
 It prints "closed" when you press CLOSE, so eyes.py can turn draw mode off too.
+REC button (letter recording, see letter_rec.py): prints "record 1" / "record 0", and "undo" when UNDO is
+pressed while recording (eyes.py then throws away that attempt). eyes.py sends "prompt WRITE: x ..." to show.
 """
 
 import os
@@ -57,6 +59,7 @@ PALE = (0.55, 0.83, 1.0)
 WHITE = (0.91, 0.93, 0.95)
 GREY = (0.55, 0.59, 0.66)
 INK = (0.02, 0.04, 0.08)
+RED_REC = (1.0, 0.32, 0.32)          # the REC button / prompt glow while recording letters
 FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 
@@ -77,6 +80,9 @@ class State:
     opening = False
     visible = False
     drag_from = None           # moving / resizing the window: (pointer, frame) when the drag began
+    recording = False          # REC button: letter recording mode (eyes.py saves what you write)
+    prompt = ""                # what to write next (sent by eyes.py while recording)
+    pen_mode = ""              # "grip" or "key" (the PEN button; "" = eyes.py has no grip pen, button hidden)
 
 
 S = State()
@@ -163,6 +169,8 @@ def press_button(name, controller):
     elif name == "width:+":
         S.width_i = min(len(L.WIDTHS) - 1, S.width_i + 1)
     elif name == "undo":
+        if S.recording:
+            print("undo", flush=True)               # tells eyes.py to throw away this attempt too
         i = nb.undo()
         if i is not None:
             goto(i)
@@ -185,6 +193,17 @@ def press_button(name, controller):
         save(reveal=True)
     elif name == "open":
         controller.choosePDF()
+    elif name == "pen":
+        if not S.pen_mode:                      # no grip pen in eyes.py: the button isn't shown, ignore
+            return
+        S.pen_mode = "key" if S.pen_mode == "grip" else "grip"
+        print(f"pen {S.pen_mode}", flush=True)
+        flash("GRIP PEN: hold a pen, push to write. Tap Option = set paper" if S.pen_mode == "grip"
+              else "KEY PEN: hold Option to write")
+    elif name == "record":
+        S.recording = not S.recording
+        print("record 1" if S.recording else "record 0", flush=True)
+        flash("RECORDING LETTERS" if S.recording else "NORMAL DRAWING")
     elif name == "close":
         controller.hide()
         print("closed", flush=True)                 # tells eyes.py to leave draw mode too
@@ -515,6 +534,9 @@ def main() -> None:
         for name, label, primary in (("open", "OPEN PDF", False), ("newpage", "+ PAGE", False), ("save", "SAVE", True),
                                      ("share", "SHARE", False), ("close", "CLOSE", False)):
             button(name, label, primary=primary)
+        button("record", "REC ON" if S.recording else "REC", active=S.recording)
+        if S.pen_mode:
+            button("pen", "PEN: GRIP" if S.pen_mode == "grip" else "PEN: KEY", active=S.pen_mode == "grip")
 
         # --- the page and its frame
         draw_page()
@@ -576,11 +598,18 @@ def main() -> None:
         for d in (14, 26, 38):
             line(L.W - 10 - d, L.H - 10, L.W - 10, L.H - 10 - d, BLUE if hot else GREY, 1.6, 1.0 if hot else 0.6, glow=4 if hot else 0)
 
+        # --- recording letters: what to write, big, at the top of the page
+        if S.recording and S.prompt:
+            w = text_width(S.prompt, 22, True, 4.0) + 60
+            r = ((L.W - w) / 2, 100, w, 50)
+            poly(chamfer(r, 8), fill=INK, fill_alpha=0.92, stroke=RED_REC, width=2.0, glow=10)
+            centered(S.prompt, r, 22, WHITE, True, 4.0)
+
         # --- a short message in the middle of the page area
         msg, until = S.flash
         if msg and time.monotonic() < until:
             w = text_width(msg, 15, True, 3.0) + 40
-            r = ((L.W - w) / 2, 112, w, 36)
+            r = ((L.W - w) / 2, 162 if S.recording else 112, w, 36)
             poly(chamfer(r, 6), fill=INK, fill_alpha=0.9, stroke=BLUE, width=1.5, glow=8)
             centered(msg, r, 15, WHITE, True, 3.0)
 
@@ -787,6 +816,12 @@ def main() -> None:
                 AppHelper.callAfter(controller.hide)
             elif word == "snap":
                 S.key_snap = rest.strip() == "1"
+            elif word == "penmode":
+                S.pen_mode = rest.strip()
+                AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
+            elif word == "prompt":
+                S.prompt = rest.strip()
+                AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "open" and rest:
                 AppHelper.callAfter(lambda p=rest.strip(): open_pdf(p))
             elif word == "quit":

@@ -84,7 +84,7 @@ def _build_layout():
     rects = {}
     # top-right buttons, laid out right to left from the edge
     x = W - 48
-    for name, w in (("close", 84), ("share", 84), ("save", 84), ("newpage", 100), ("open", 84)):
+    for name, w in (("close", 84), ("share", 84), ("save", 84), ("newpage", 100), ("open", 84), ("record", 92), ("pen", 116)):
         x -= w
         rects[name] = (x, 36, w, 34)
         x -= 10

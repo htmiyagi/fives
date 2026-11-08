@@ -1,55 +1,49 @@
 # Install FIVES (one command)
 
-For a Mac. Takes about 5–10 minutes, mostly downloading.
+For a Mac. Takes about 5 minutes, mostly downloading. No password needed.
 
 ## 1. Paste this into Terminal
 
-Open **Terminal** (Cmd + Space, type "Terminal", Enter), paste everything below, and press Enter.
-It may ask for your Mac password once (that's Homebrew installing). Typing a password shows nothing on screen; that's normal.
+Open **Terminal** (Cmd + Space, type "Terminal", Enter), paste this line, and press Enter:
 
 ```bash
-command -v brew >/dev/null || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"; \
-eval "$(/opt/homebrew/bin/brew shellenv 2>/dev/null || /usr/local/bin/brew shellenv)"; \
-brew install python@3.12 git && \
-git clone https://github.com/htmiyagi/fives.git ~/fives && \
-cd ~/fives && \
-"$(brew --prefix)/bin/python3.12" -m venv .venv && \
-source .venv/bin/activate && \
-pip install --upgrade pip && \
-pip install -r requirements.txt pyobjc-framework-Cocoa pyobjc-framework-Quartz pyobjc-framework-CoreText pillow && \
-echo "" && echo "FIVES is installed. Starting it now..." && \
-python eyes.py
+curl -fsSL https://raw.githubusercontent.com/htmiyagi/fives/main/install.sh | bash
 ```
 
-## 2. Allow the permissions
+A window asks **Install FIVES?** Click **Install**. When it's done, click **Open FIVES**.
+That's the only time you type anything.
 
-The first time, macOS will ask (or silently block) a few things. Open **System Settings > Privacy & Security**
-and turn **Terminal** ON in each of these:
+## 2. The FIVES window
+
+From now on, **double-click FIVES on your Desktop**. You get a small window:
+**Start FIVES**, **Set up permissions**, **Settings**, **Update**.
+
+The first time, click **Set up permissions**. FIVES pops up Apple's own boxes and opens the right
+Settings page for each one, so you just turn **Terminal** on:
 
 - **Camera**: so FIVES can see your hand
 - **Accessibility**: so it can move the mouse and click
 - **Input Monitoring**: so the keyboard shortcuts work from any app
 
-Then quit FIVES (press `q` in its window) and start it again (step 3).
-
-## 3. Running it again later
-
-```bash
-cd ~/fives && source .venv/bin/activate && python eyes.py
-```
+Then **quit Terminal completely (Cmd + Q)** and double-click FIVES again. macOS only applies new
+permissions after a restart.
 
 ## Using it
 
 - Press `c` in the camera window to turn hand control on or off. Press `q` to quit.
 - **Point** with your index finger to move the cursor. **Pinch** thumb + index and let go to click.
   Pinch and move to drag. All the gestures are in the [README](README.md#hand-mouse-gestures).
-- Press `l` to cycle the cursor "lead": `CNN` (default, a small neural network that predicts where
-  your finger is going), `DAMPED` (a simple physics guess), or `OFF`. It was trained on one person's
-  hand, so tell Hoyu whether it feels good for you!
+- Press `l` to cycle the cursor "lead": `STEADY` / `CNN` (small neural networks that predict where your
+  finger is going), `DAMPED` (a simple physics guess), or `OFF`. They were trained on one person's hand,
+  so tell Hoyu how they feel for you!
+
+## Updating
+
+Click **Update** in the FIVES window (or paste the command from step 1 again). Your settings are kept.
 
 ## If something goes wrong
 
-- **"command not found: python3.12"** or Homebrew errors: close Terminal, open a new one, paste the command again.
-- **"destination path '~/fives' already exists"**: it's already installed; use step 3.
-- **The cursor doesn't move**: check Accessibility (step 2) and press `c` in the camera window.
+- **The camera window is black**: quit FaceTime, Zoom, Photo Booth or anything else using the camera,
+  then Cmd + Q Terminal and start FIVES again.
+- **The cursor doesn't move**: check Accessibility is on for Terminal, and press `c` in the camera window.
 - **"CNN lead not loaded"**: FIVES still works with the simpler lead. Send Hoyu the message it printed.

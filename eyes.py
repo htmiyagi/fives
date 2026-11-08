@@ -337,6 +337,9 @@ class PanelLink:
         self.proc = None
         self.closed = threading.Event()             # set when the window tells us "closed" (listen=True)
         self.frame = None                           # where the window is on screen (x, y, w, h, top-left origin) while shown
+        self.record = False                         # the sketch window's REC button is on (letter recording)
+        self.pen_mode = None                        # the sketch window's PEN button: "grip" or "key"
+        self.undo = threading.Event()               # UNDO pressed while recording: throw away that attempt
         if sys.platform != "darwin":
             return
         try:
@@ -365,6 +368,12 @@ class PanelLink:
                     pass
             elif word == "hidden":
                 self.frame = None
+            elif word in ("pen grip", "pen key"):
+                self.pen_mode = word.split()[1]
+            elif word in ("record 1", "record 0"):
+                self.record = word == "record 1"
+            elif word == "undo":
+                self.undo.set()
             elif word:
                 print(f"{script}: {word}")
 
@@ -553,8 +562,38 @@ def main() -> None:
     keypen = g.KeyPen(config.DRAW_GAIN, config.LOST_HAND_RELEASE_SECONDS,
                       0.0 if same_scale else config.DRAW_RESYNC_SECONDS, constant=same_scale)
     draw_smooth = g.OneEuroFilter(config.DRAW_MIN_CUTOFF, config.DRAW_BETA)   # extra-calm fingertip for drawing
+    letters = None                # LETTER_RECORD: the REC button in the sketch window records air-written letters
+    if getattr(config, "LETTER_RECORD", False):  # for Crosshair's letter reader (see letter_rec.py)
+        from letter_rec import LetterRecorder
+        letters = LetterRecorder(Path(__file__).parent / getattr(config, "LETTER_RECORD_DIR", "crosshair/data_letters"),
+                                 getattr(config, "LETTER_RECORD_SET", "letters"), getattr(config, "LETTER_REPEATS", 4),
+                                 getattr(config, "LETTER_DONE_SECONDS", 1.2))
+        print(f"letter recording ready: {len(letters.prompts)} prompts. Press REC in the sketch window to start.")
+    letters_on = False            # recording right now (REC pressed)
+    draw_lead = getattr(config, "DRAW_LEAD", "off")      # "off", "steady", "cnn" or "damped": a lead while drawing too
+    draw_lead = None if draw_lead == "off" else draw_lead
+    draw_lead_scale = getattr(config, "DRAW_LEAD_SCALE", 1.0)
+    if draw_lead is not None:
+        print(f"draw mode lead: {draw_lead.upper()} (x{draw_lead_scale})")
+    prompt_sent = None            # the last prompt we showed in the sketch window
     key_draw = False          # key draw mode is on (toggled by tapping its hotkey)
     use_key_pen = config.DRAW_PEN == "key"
+    grip_pen = None               # the GRIP PEN: hold an invisible pen + push it to the "paper" = ink (grip_pen.py)
+    grip_path = Path(__file__).parent / getattr(config, "DRAW_GRIP_MODEL", "pen_model/grip_pen.npz")
+    if config.DRAW_PEN in ("grip", "key") and grip_path.exists():
+        use_key_pen = True        # same draw mode (Cmd+Esc) for both; the PEN button in the sketch window switches
+        try:
+            from grip_pen import GripPen
+            grip_pen = GripPen(grip_path, getattr(config, "DRAW_GRIP_CONFIRM", 2), getattr(config, "DRAW_GRIP_RELEASE", 3),
+                               getattr(config, "DRAW_GRIP_POINT", "nib"), touch=getattr(config, "DRAW_GRIP_TOUCH", 0.03),
+                               lift=getattr(config, "DRAW_GRIP_LIFT", 0.06))
+            print(f"grip pen ready (starts as {'GRIP' if config.DRAW_PEN == 'grip' else 'KEY'}; the PEN button in the "
+                  f"sketch window switches). Grip mode: tap {config.DRAW_PEN_KEY} = set your paper.")
+        except Exception as err:
+            print(f"grip pen not loaded ({err}). Using the {config.DRAW_PEN_KEY} key instead.")
+    gripping = False              # the grip pen says ink down right now
+    grip_was_on = None            # which pen was active last frame (to notice a switch)
+    pen_key_was = False           # the pen key last frame (a TAP sets the paper in grip mode)
     # Two pen keys: DRAW_PEN_KEY (Option) is a plain pen. SNAP_PEN_KEY draws too, but when you hold
     # still for a moment (SNAP_QUICK_SECONDS) the stroke is cleaned up.
     # With the sketch window (SKETCH = True) the window does the smoothing and snapping itself, on its own
@@ -818,7 +857,8 @@ def main() -> None:
                 if flick is not None:
                     # (in key draw mode only the pen key matters: with it up you can still swipe a window away)
                     busy = (engine.state != "idle" or pinch.pinched or scroll_mode or draw_mode
-                            or (key_draw and (keypen.down or pen_key.down or (snap_key is not None and snap_key.down))))
+                            or (key_draw and (keypen.down or pen_key.down or gripping
+                                              or (snap_key is not None and snap_key.down))))
                     direction = None if busy else flick.update(t, points)
                     if busy:
                         flick.reset()
@@ -841,8 +881,28 @@ def main() -> None:
                             panel.send("hide" if hide else "show")
                             flash_text, flash_until = ("MUSIC HIDDEN" if hide else "MUSIC SHOWN"), time.monotonic() + 1.0
                             print(f"flick {direction}: music window {'hidden' if hide else 'shown'}")
-                draw_tip = draw_smooth.update(*points[g.INDEX_TIP], t)    # calmer fingertip for key drawing
+                gripping = False
+                grip_on = grip_pen is not None and ((sketch.pen_mode or config.DRAW_PEN) if sketch is not None
+                                                    else config.DRAW_PEN) == "grip"
+                if grip_on != grip_was_on:
+                    if grip_pen is not None:
+                        grip_pen.reset()
+                    if sketch is not None and grip_pen is not None:
+                        sketch.send("penmode " + ("grip" if grip_on else "key"))
+                    grip_was_on = grip_on
+                if grip_on and key_draw:
+                    if pen_key.down and not pen_key_was:        # TAP the pen key = "my paper is here"
+                        size = grip_pen.set_paper(points)
+                        print(f"paper set at hand size {size:.3f}")
+                    gripping = grip_pen.update(points, zs)
+                    flash_text, flash_until = grip_pen.status(), time.monotonic() + 0.3
+                pen_key_was = pen_key.down if pen_key is not None else False
+                pen_point = grip_pen.nib(points) if grip_on else points[g.INDEX_TIP]
+                draw_tip = draw_smooth.update(*pen_point, t)    # calmer fingertip (or pen nib) for key drawing
                 draw_tip = (draw_tip[0] + off[0], draw_tip[1] + off[1])
+                if draw_lead is not None:               # DRAW_LEAD: the steady CNN's push in draw mode too (an experiment)
+                    push = steady_off if draw_lead == "steady" else cnn_off if draw_lead == "cnn" else lead_off
+                    draw_tip = (draw_tip[0] + push[0] * draw_lead_scale, draw_tip[1] + push[1] * draw_lead_scale)
                 mid_ratio = g.middle_ratio(points)      # thumb <-> middle gap
                 # Dragging, or scrolling with your pinch held, gets a forgiving grip.
                 # While drawing, the pen holds on until the pinch is clearly open (DRAW_HOLD_END);
@@ -939,9 +999,29 @@ def main() -> None:
                             if sketch is not None and stroke_is_snap != sketch_snap_sent:
                                 sketch.send("snap 1" if stroke_is_snap else "snap 0")
                                 sketch_snap_sent = stroke_is_snap
-                        perform(keypen.update(t, (pen_key.down or snap_down) and not wanted, draw_tip))
+                        key_ink = pen_key.down and not grip_on          # in grip mode the key only sets the paper
+                        perform(keypen.update(t, (key_ink or gripping or snap_down) and not wanted, draw_tip))
                         aim = keypen.aim() or draw_tip
                         state = "DRAWING" if keypen.down else "DRAW"
+                        if letters is not None:         # letter recording (REC button, or always if no sketch window)
+                            want = sketch.record if sketch is not None else True
+                            if want != letters_on:
+                                letters_on = want
+                                letters.restart()       # fresh start: taps on buttons aren't letters
+                                prompt_sent = None
+                                print("letter recording", "ON" if want else "OFF")
+                            if sketch is not None and sketch.undo.is_set():
+                                sketch.undo.clear()
+                                letters.restart()       # UNDO: write this one again
+                            if letters_on:
+                                text, saved = letters.feed(t, [(lm.x, lm.y) for lm in hand], zs, keypen.down, aim)
+                                if saved:
+                                    print(f"saved '{saved}'   next: {text}")
+                                if sketch is not None and text != prompt_sent:
+                                    sketch.send("prompt " + text)
+                                    prompt_sent = text
+                                elif sketch is None:
+                                    flash_text, flash_until = text, time.monotonic() + 0.5
                     elif draw_mode:
                         # Drawing: the pen goes down the instant you pinch and follows your knuckles.
                         pen_tip = history.seconds_ago(config.DRAW_REWIND_SECONDS, t) or tip
@@ -1028,6 +1108,9 @@ def main() -> None:
                     perform(engine.lost(stamp))         # lets go if the hand stays gone
                     perform(pen.lost(stamp))
                     perform(keypen.lost(stamp))
+                    if grip_pen is not None:
+                        grip_pen.reset()                # hand gone: the grip pen starts fresh (pen up)
+                    gripping = False
                 if draw_mode and not (draw_watcher is not None and draw_watcher.down):
                     draw_mode = False
                     perform(pen.reset())
