@@ -12,7 +12,8 @@ Same look as the music panel (panel.py): frosted glass, cut armor corners, neon 
     [  ENGAGE  ]   [PERMISSIONS] [SETTINGS]
                    [UPDATE]      [FOLDER]
 
-  ENGAGE / DISENGAGE  runs eyes.py (hand tracking) in the background. Its messages still print in Terminal.
+  ENGAGE / DISENGAGE  opens the FIVES window (hub.py): tabs for EYES (hand tracking), BRAIN and SETTINGS.
+                      hub.py runs eyes.py in the background. Messages still print in Terminal.
   PERMISSIONS         pops up Apple's own "allow?" boxes and opens the right Settings page for anything still off
                       (macOS applies new permissions after you quit Terminal with Cmd+Q and reopen FIVES)
   SETTINGS            opens config.py in TextEdit        FOLDER   opens the FIVES folder in Finder
@@ -66,7 +67,7 @@ ROWS = [("camera", "CAMERA"), ("accessibility", "ACCESSIBILITY"), ("input", "INP
 
 
 class State:
-    proc = None              # the running eyes.py
+    proc = None              # the running hub.py (the tabbed FIVES window; it runs eyes.py)
     hover = None             # button under the pointer
     pressed = None
     perms = {"camera": None, "accessibility": None, "input": None}
@@ -90,7 +91,8 @@ def check_permissions():
 
 
 def ready():
-    return all(v is not False for v in S.perms.values())
+    """Enough to run: camera + accessibility. Input Monitoring only matters for the keyboard shortcuts."""
+    return S.perms.get("camera") is not False and S.perms.get("accessibility") is not False
 
 
 # ---- drawing helpers (like panel.py) ---------------------------------------------------------------
@@ -261,8 +263,9 @@ def draw():
             glow_off()
         word = "GRANTED" if ok else "LOCKED" if ok is False else "UNKNOWN"
         text(word, 340, y + 1, 12, c, True, 2.5, glow=4 if ok else 0, glow_color=c)
-    hint = S.msg or ("> PRESS C IN THE CAMERA WINDOW FOR HAND CONTROL. Q QUITS IT." if on else
-                     "> READY. PRESS ENGAGE." if ready() else "> RUN PERMISSIONS FIRST.")
+    hint = S.msg or ("> PRESS C ON THE EYES TAB FOR HAND CONTROL. Q QUITS FIVES." if on else
+                     "> READY. (KEYBOARD SHORTCUTS NEED INPUT MONITORING.)" if ready() and S.perms.get("input") is False
+                     else "> READY. PRESS ENGAGE." if ready() else "> RUN PERMISSIONS FIRST.")
     text(hint, 24, 184, 11, PALE, False, 1.5, 0.9)
 
     # buttons
@@ -281,9 +284,9 @@ def press(name):
             S.proc.terminate()
             S.msg = ""
         elif not ready():
-            S.msg = "> PERMISSIONS NEEDED FIRST: PRESS PERMISSIONS."
+            S.msg = "> CAMERA AND ACCESSIBILITY NEEDED FIRST: PRESS PERMISSIONS."
         else:
-            S.proc = subprocess.Popen([sys.executable, str(HERE / "eyes.py")], cwd=HERE)
+            S.proc = subprocess.Popen([sys.executable, str(HERE / "hub.py")], cwd=HERE)
             S.msg = ""
     elif name == "permissions":
         missing = permissions.request_all()

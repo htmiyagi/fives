@@ -8,6 +8,7 @@ What happens each frame (about 30 times a second):
   4. draw it on screen, and (in cursor mode) drive the mouse
 
 Keys in the camera window:  q = quit   c = cursor control on/off
+(Started from the FIVES window, the same picture and keys live in its EYES tab instead: see eyes_link.py.)
 
 Gestures in cursor mode:
   point (index finger)          move the cursor
@@ -33,6 +34,7 @@ import cv2
 import mediapipe as mp
 
 import config
+import eyes_link
 import gestures as g
 import hotkey
 import hud as hud_mod
@@ -647,7 +649,8 @@ def main() -> None:
     hud = (hud_mod.Hud(config.HUD_WIDTH, config.HUD_HEIGHT, config.HUD_VIEW, config.HUD_GLOW,
                        config.HUD_SCALE, config.HUD_STRENGTH, config.HUD_DENOISE) if config.HUD else None)
     window = f"{config.NAME} eyes"
-    if hud is not None:
+    in_hub = eyes_link.sender()       # set when the FIVES window (hub.py) started us: IT shows the picture (EYES tab)
+    if hud is not None and in_hub is None:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, *hud.size)       # shown at layout size; drawn at HUD_SCALE x for sharpness
     shape_locked = hud is None        # tries a few frames after the window opens, then stops
@@ -1136,12 +1139,14 @@ def main() -> None:
                 timing = f"detect {detect_ms:.0f} ms   lag {pipe_ms:.0f} ms"
                 cv2.putText(frame, timing, (16, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.6, TEXT, 2)
                 shown = frame
-            cv2.imshow(window, shown)
-            if not shape_locked and shape_tries < 60:
-                shape_tries += 1
-                shape_locked = lock_window_shape(window, *hud.size)
-
-            key = cv2.waitKey(1) & 0xFF
+            if in_hub is not None:
+                key = in_hub.show(shown)        # the FIVES window draws it, and tells us which key was pressed there
+            else:
+                cv2.imshow(window, shown)
+                if not shape_locked and shape_tries < 60:
+                    shape_tries += 1
+                    shape_locked = lock_window_shape(window, *hud.size)
+                key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("m") and panel is not None:

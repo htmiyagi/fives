@@ -17,6 +17,7 @@ That's the only time you type anything.
 
 From now on, **double-click FIVES on your Desktop**. You get the FIVES window:
 **ENGAGE** (start hand tracking), **PERMISSIONS**, **SETTINGS**, **UPDATE**, **FOLDER**.
+**ENGAGE** opens the main window, with three big tabs: **EYES**, **BRAIN** and **SETTINGS**.
 Drag the window's glass to move it.
 
 The first time, click **PERMISSIONS**. FIVES pops up Apple's own boxes and opens the right
@@ -31,7 +32,7 @@ permissions after a restart. When all three say **GRANTED**, press **ENGAGE**.
 
 ## Using it
 
-- Press `c` in the camera window to turn hand control on or off. Press `q` to quit.
+- On the **EYES** tab, press `c` to turn hand control on or off. Press `q` to quit.
 - **Point** with your index finger to move the cursor. **Pinch** thumb + index and let go to click.
   Pinch and move to drag. All the gestures are in the [README](README.md#hand-mouse-gestures).
 - Press `l` to cycle the cursor "lead": `STEADY` / `CNN` (small neural networks that predict where your
@@ -44,7 +45,7 @@ Click **UPDATE** in the FIVES window (or paste the command from step 1 again). Y
 
 ## If something goes wrong
 
-- **The camera window is black**: quit FaceTime, Zoom, Photo Booth or anything else using the camera,
+- **The EYES tab is black**: quit FaceTime, Zoom, Photo Booth or anything else using the camera,
   then Cmd + Q Terminal and start FIVES again.
-- **The cursor doesn't move**: check Accessibility is on for Terminal, and press `c` in the camera window.
+- **The cursor doesn't move**: check Accessibility is on for Terminal, and press `c` on the EYES tab.
 - **"CNN lead not loaded"**: FIVES still works with the simpler lead. Send Hoyu the message it printed.

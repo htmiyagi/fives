@@ -40,7 +40,7 @@ I have always wanted to create an AI-based workflow where I am liberated from th
 
 ## Hand mouse: gestures
 
-Press `c` in the camera window to turn cursor control on or off, and `l` to turn the lead on or off. Press `h` to switch the window between the camera and a hand-only view, and `[` / `]` to turn the blue tint down or up. Press `q` to quit.
+Press `c` on the **EYES** tab of the FIVES window to turn cursor control on or off, and `l` to turn the lead on or off. Press `h` to switch the window between the camera and a hand-only view, and `[` / `]` to turn the blue tint down or up. Press `q` to quit.
 
 The camera window is a visor-style HUD (`hud.py`): an angled helmet frame with the camera in a viewport in the middle (natural colors with a cool blue tint, drawn at double resolution so text is sharp), your hand's wiring, a bracket on the cursor spot, the current mode, pinch gap, and live fps/lag readouts. Set `HUD = False` in `config.py` for the plain camera picture. Tuning: `HUD_STRENGTH` (blue tint), `HUD_SCALE` (1 = faster, 2 = sharper), `HUD_DENOISE`, `HUD_GLOW`.
 
@@ -89,7 +89,9 @@ curl -fsSL https://raw.githubusercontent.com/htmiyagi/fives/main/install.sh | ba
 A window asks **Install FIVES?** After about 5 minutes there's a **FIVES** icon on your Desktop.
 Double-click it to open the FIVES window:
 
-- **ENGAGE** starts hand tracking (**DISENGAGE** stops it)
+- **ENGAGE** opens the main FIVES window and starts hand tracking (**DISENGAGE** closes it). The main window
+  has three big tabs: **EYES** (the hand-tracking picture), **BRAIN** (the local AI's home: an orb that is
+  bright when the Ollama model is ready) and **SETTINGS** (everyday choices such as the default music app)
 - **PERMISSIONS** pops up Apple's own boxes for Camera, Accessibility and Input Monitoring and opens the right
   Settings page for anything still off (turn **Terminal** on, then quit Terminal with Cmd + Q and reopen FIVES)
 - **SETTINGS** opens `config.py`, **UPDATE** downloads the newest version (your settings are kept)
@@ -150,7 +152,11 @@ yet. Crosshair's learning curve shows it still improving as data grows, so it go
 
 | File | Purpose |
 | --- | --- |
-| `launcher.py` | The FIVES window: engage/disengage, permissions, settings, update |
+| `launcher.py` | The small start window: engage/disengage, permissions, settings, update |
+| `hub.py` | The main FIVES window with the EYES, BRAIN and SETTINGS tabs. Runs `eyes.py` in the background |
+| `eyes_link.py` | Carries the eyes picture into the EYES tab (shared memory) and key presses back |
+| `settings.py` | Remembers the SETTINGS tab's choices in `settings.json` (yours, never uploaded) |
+| `spotify_connect.py` | CONNECT SPOTIFY: a walkthrough that links a Premium account (search, playlists). The key stays in `spotify_keys.json` on your Mac |
 | `install.sh` | The one-line installer (uv for Python, no Homebrew) and the Desktop icon |
 | `permissions.py` | Checks and asks for Camera, Accessibility and Input Monitoring |
 | `eyes.py` | Webcam loop and mouse control, including the `Glider` that smooths the cursor between camera frames |

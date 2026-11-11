@@ -3,3 +3,5 @@ __pycache__/
 *.pyc
 models/
 .DS_Store
+settings.json
+spotify_keys.json
