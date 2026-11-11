@@ -152,11 +152,14 @@ def call(method: str, path: str, body: dict | None = None, **params) -> dict:
     try:
         with urllib.request.urlopen(req, timeout=15) as reply:
             text = reply.read()
-            return json.loads(text) if text else {}
     except urllib.error.HTTPError as err:
         raise SpotifyError(f"Spotify said no to {path} ({err.code})", err.code)
     except OSError as err:
         raise SpotifyError(f"couldn't reach Spotify ({err})")
+    try:
+        return json.loads(text) if text else {}
+    except ValueError:                               # some "done!" answers aren't JSON (the queue sends plain text)
+        return {}
 
 
 # ---- the sign-in (PKCE) ------------------------------------------------------------------------------

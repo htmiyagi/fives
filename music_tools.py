@@ -16,6 +16,7 @@ How a tool reaches Spotify:
 """
 
 import difflib
+import functools
 import subprocess
 import time
 
@@ -132,6 +133,19 @@ def _explain(err: SpotifyError) -> str:
 
 
 # ---- the tools (tools.py puts these on Rex's menu) ------------------------------------------------------
+def never_crash(fn):
+    """A decorator: wraps a tool so a surprise error comes back as a sentence instead of crashing Rex.
+    (A decorator is a function that wraps another one. Writing @never_crash above a def applies it.)"""
+    @functools.wraps(fn)                                # keep the tool's name and docstring for Rex's menu
+    def safe(*args, **kwargs) -> str:
+        try:
+            return fn(*args, **kwargs)
+        except Exception as err:
+            return f"Something unexpected went wrong in {fn.__name__}: {err}"
+    return safe
+
+
+@never_crash
 def play_music(what: str, kind: str = "song", shuffle: bool | None = None) -> str:
     """Play music on Spotify: a song, album, artist, or playlist. Your own playlists are checked first.
 
@@ -166,6 +180,7 @@ def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
     spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
 
 
+@never_crash
 def queue_song(what: str) -> str:
     """Add a song to the end of the Spotify queue (it plays after the current songs).
 
@@ -185,6 +200,7 @@ def queue_song(what: str) -> str:
     return f"Added {_describe(song)} to the queue."
 
 
+@never_crash
 def now_playing() -> str:
     """Say what song is playing on Spotify right now, who it's by, and what album it's from."""
     if not spotify_connect.connected():
@@ -201,6 +217,7 @@ def now_playing() -> str:
     return f"{state} {_describe(item)}" + (f", from {album}." if album else ".")
 
 
+@never_crash
 def make_playlist(name: str, songs: list[str]) -> str:
     """Make a new Spotify playlist and fill it with songs. Put any songs the user asked for first.
 
@@ -240,6 +257,7 @@ def _add_songs(playlist_id: str, uris: list[str]) -> None:
         spotify_connect.call("POST", f"/playlists/{playlist_id}/items", {"uris": uris[start:start + ADD_LIMIT]})
 
 
+@never_crash
 def add_to_playlist(playlist: str, song: str = "") -> str:
     """Add a song to one of the user's own Spotify playlists, found by its name.
 

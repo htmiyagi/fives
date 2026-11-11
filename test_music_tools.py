@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import music_tools
+import spotify_connect
 from spotify_connect import SpotifyError
 
 GET_LUCKY = {"type": "track", "uri": "spotify:track:lucky", "name": "Get Lucky",
@@ -114,11 +115,25 @@ class OtherToolTests(FakeSpotify):
         self.assertEqual(music_tools.add_to_playlist("road trip", "get lucky"),
                          "No playlist called 'road trip'. Your playlists: Gym, Chill Vibes.")
 
+    def test_a_surprise_error_becomes_a_sentence_not_a_crash(self):
+        with mock.patch("spotify_connect.get", side_effect=KeyError("uri")):
+            self.assertIn("Something unexpected went wrong in now_playing", music_tools.now_playing())
+
     def test_every_tool_asks_you_to_connect_first(self):
         with mock.patch("spotify_connect.connected", lambda: False):
             for reply in (music_tools.play_music("x"), music_tools.queue_song("x"), music_tools.now_playing(),
                           music_tools.make_playlist("x", ["y"]), music_tools.add_to_playlist("x")):
                 self.assertEqual(reply, music_tools.NOT_CONNECTED)
+
+
+class CallTests(unittest.TestCase):
+    def test_a_reply_that_is_not_json_counts_as_done(self):
+        # The real queue endpoint answers with plain text, which used to crash call()
+        reply = mock.MagicMock()
+        reply.__enter__.return_value.read.return_value = b"0aBcD-not-json"
+        with mock.patch("spotify_connect.token", lambda: "key"), \
+                mock.patch("spotify_connect.urllib.request.urlopen", return_value=reply):
+            self.assertEqual(spotify_connect.call("POST", "/me/player/queue", uri="x"), {})
 
 
 class NameMatchTests(unittest.TestCase):
