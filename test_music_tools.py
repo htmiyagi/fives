@@ -95,6 +95,17 @@ class PlayMusicTests(FakeSpotify):
         music_tools.play_music("a road trip playlist", "playlist")
         self.assertIn("/search", self.searched)
 
+    def test_playlist_note_tells_rex_your_playlist_names(self):
+        self.assertIn("Gym, Chill Vibes", music_tools.playlist_note())
+
+    def test_playlist_note_is_empty_when_spotify_is_not_connected(self):
+        with mock.patch("spotify_connect.connected", lambda: False):
+            self.assertEqual(music_tools.playlist_note(), "")
+
+    def test_playlist_note_is_empty_when_spotify_fails(self):
+        with mock.patch("spotify_connect.get", side_effect=SpotifyError("down", 500)):
+            self.assertEqual(music_tools.playlist_note(), "")
+
     def test_says_when_nothing_is_found(self):
         self.assertIn("Couldn't find", music_tools.play_music("asdfgh", "song"))
 

@@ -99,6 +99,20 @@ def _find_my_playlist(name: str) -> tuple[dict | None, list[dict]]:
     return found, playlists
 
 
+def playlist_note() -> str:
+    """A line for Rex's prompt listing your playlists, so Rex can match "my workout one" to "⚔️ Conquest ⚔️".
+    (The model can't see Spotify, so we tell it.) Empty if Spotify isn't connected or doesn't answer:
+    Rex still works without it."""
+    if not spotify_connect.connected():
+        return ""
+    try:
+        names = _list_names(_my_playlists())
+    except SpotifyError:
+        return ""
+    return (f"The user's Spotify playlists: {names}. When they mean one of these, pass its exact name "
+            f"(keep 'my' in front if they said it).")
+
+
 def _list_names(playlists: list[dict]) -> str:
     """'Gym, Late Night, Road Trip' (so Rex can guess which one you meant)."""
     names = [p.get("name", "") for p in playlists if p.get("name")]
