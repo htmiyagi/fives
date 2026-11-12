@@ -7,6 +7,8 @@ The whole trick is one loop:
   3. repeat until it answers in plain words
 """
 
+import string
+
 import ollama
 
 import config
@@ -15,6 +17,24 @@ from tools import TOOLS
 
 # Look tools up by name: {"open_app": open_app, ...}
 TOOLS_BY_NAME = {fn.__name__: fn for fn in TOOLS}
+
+# Shortcuts: if your WHOLE message is one of these, we run music_controls ourselves, skipping the model.
+# Instant, can't be misunderstood, and works even when Ollama is off.
+SHORTCUTS = {
+    "skip": "skip", "next": "skip", "next song": "skip", "skip song": "skip", "skip this": "skip",
+    "pause": "pause", "stop": "pause",
+    "resume": "resume", "play": "resume", "unpause": "resume",
+    "back": "previous", "previous": "previous", "previous song": "previous", "go back": "previous",
+    "restart": "restart",
+}
+POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip please" counts as "skip"
+
+
+def shortcut_action(user_text: str) -> str | None:
+    """'Skip!' -> 'skip'. Returns None for anything that isn't a plain one-word-ish command."""
+    no_punctuation = user_text.lower().translate(str.maketrans("", "", string.punctuation))
+    words = [word for word in no_punctuation.split() if word not in POLITE_WORDS]
+    return SHORTCUTS.get(" ".join(words))
 
 
 def new_conversation() -> list:
@@ -38,6 +58,14 @@ def run_tool(name: str, args: dict) -> str:
 def think(messages: list, user_text: str, on_tool=None) -> str:
     """Handle one request. Adds everything to `messages` and returns the reply."""
     messages.append({"role": "user", "content": user_text})
+
+    action = shortcut_action(user_text)
+    if action:                             # a plain "skip" etc: no model needed
+        result = run_tool("music_controls", {"action": action})
+        if on_tool:
+            on_tool("music_controls", {"action": action}, result)
+        messages.append({"role": "assistant", "content": result})   # so Rex remembers what happened
+        return result
 
     for _ in range(config.MAX_TOOL_ROUNDS):
         response = ollama.chat(

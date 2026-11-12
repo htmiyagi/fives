@@ -416,6 +416,8 @@ def _song(status: dict) -> str:
 @never_crash
 def music_controls(action: str) -> str:
     """Pause, resume, skip, go back, or start over on what's in the Spotify player right now. Works without Premium.
+    You CAN skip: always call this for "skip", "next", "next song", "pause", "stop", "back", etc. Never just
+    answer in words that you can't.
 
     Args:
         action: One of "pause", "resume", "skip", "previous" (the song before this one), or "restart" (this song
