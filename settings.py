@@ -20,20 +20,36 @@ FILE = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULTS = {
     "music_app": "Spotify",      # which app "play music" means
+    "play_order": "Shuffle",     # what "play my playlist" does when you don't say shuffle or in order
     "ask_first": True,           # show me before anything is sent or deleted
     "speak_replies": False,      # read answers out loud
 }
 CHOICES = {
     "music_app": ["Spotify", "Apple Music"],
+    "play_order": ["Shuffle", "In order", "As is"],     # "As is" = keep whatever Spotify was doing
 }
 
 _cache = None
+_cache_time = None     # when settings.json was last changed, as of our last read
+
+
+def _file_time():
+    """When settings.json was last saved (None if it doesn't exist yet)."""
+    try:
+        return FILE.stat().st_mtime
+    except OSError:
+        return None
 
 
 def load() -> dict:
-    """Everything, with defaults filled in for anything not chosen yet (or if the file got damaged)."""
-    global _cache
-    if _cache is None:
+    """Everything, with defaults filled in for anything not chosen yet (or if the file got damaged).
+
+    Re-reads the file whenever it changed, because the FIVES window and the chat are separate programs:
+    flip a setting in the window, and the chat sees it on its very next request."""
+    global _cache, _cache_time
+    changed = _file_time()
+    if _cache is None or changed != _cache_time:
+        _cache_time = changed
         try:
             saved = json.loads(FILE.read_text())
         except (OSError, ValueError):

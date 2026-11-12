@@ -22,6 +22,7 @@ import subprocess
 import time
 
 import confirm_box
+import settings
 import spotify_connect
 from spotify_connect import SpotifyError
 
@@ -35,6 +36,7 @@ MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spoti
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
 WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
 ENOUGH_WORDS = 0.75         # at least 3/4 of the words you said must appear in the song Spotify found
+ORDERS = {"Shuffle": True, "In order": False, "As is": None}    # PLAY ORDER setting -> shuffle
 FILLER_WORDS = {"my", "mine", "the", "a", "an", "playlist", "playlists", "called", "named"}   # not part of a name
 
 
@@ -206,7 +208,7 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
     Args:
         what: What to play, for example "Get Lucky", "Daft Punk", or "gym".
         kind: One of "song", "album", "artist", or "playlist".
-        shuffle: True to shuffle, False to play in order. Leave it out to keep Spotify's current setting.
+        shuffle: True to shuffle, False to play in order. Leave it out unless the user said which.
         mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
     """
     if not spotify_connect.connected():
@@ -221,6 +223,8 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
         item = item or _search(what, kind)
         if not item:
             return f"Couldn't find a {kind} called '{what}' on Spotify."
+        if shuffle is None and kind != "song":           # you didn't say: use your PLAY ORDER setting
+            shuffle = ORDERS.get(settings.get("play_order"))
         _on_a_device(lambda device_id: _start(item, shuffle, device_id))
     except SpotifyError as err:
         return _explain(err)

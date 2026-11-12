@@ -45,7 +45,10 @@ from AppKit import (NSAffineTransform, NSAppearance, NSApplication, NSBackingSto
                     NSGraphicsContext, NSImage, NSKernAttributeName, NSMakeRect, NSScreen, NSShadow, NSString, NSTrackingArea, NSURL,
                     NSView, NSVisualEffectView, NSWindow, NSZeroRect)
 from Foundation import NSData, NSObject, NSTimer
+from AppKit import NSColorSpace
 from PyObjCTools import AppHelper
+from Quartz import (CGContextBeginTransparencyLayer, CGContextEndTransparencyLayer, CGContextSetBlendMode,
+                    kCGBlendModeDestinationIn)   # Quartz comes with pyautogui, nothing new to install
 
 import eyes_link
 import settings
@@ -86,11 +89,15 @@ GRIP = (W - 36, H - 36, 36, 36)
 ROWS = [                         # the SETTINGS tab: (settings.py key, title, what it means)
     ("music_app", "DEFAULT MUSIC APP", "Which app \"play some music\" opens"),
     ("spotify", "SPOTIFY", ""),          # not a saved choice: a CONNECT button (see spotify_connect.py)
+    ("play_order", "PLAY ORDER", "What \"play my playlist\" does if you don't say"),
     ("ask_first", "ASK ME FIRST", "Show me before anything is sent or deleted"),
     ("speak_replies", "TALK BACK", "Read answers out loud"),
 ]
 ROW_X, ROW_Y, ROW_W, ROW_H, ROW_GAP = 56, 170, 888, 76, 12
 CONFIG_BUTTON = (56, 556, 318, 40)
+ROWS_BOTTOM = CONFIG_BUTTON[1] - 14     # the settings rows scroll inside ROW_Y..ROWS_BOTTOM
+WHEEL_STEP = 12                         # how far one click of a mouse wheel scrolls
+FADE = 26                               # how tall the soft fade is where rows scroll out of sight
 RESTART = (W / 2 - 110, 452, 220, 48)
 EYES_KEYS = "cmhtl[]"            # keys passed on to eyes.py while the EYES tab is showing (q is handled here)
 
@@ -107,6 +114,7 @@ class State:
     frame_size = (16, 9)         # its width and height in pixels
     brain = "checking"           # "ready" / "missing" (Ollama is on, model isn't downloaded) / "asleep" / "checking"
     quitting = False
+    settings_scroll = 0.0        # how far the SETTINGS rows are scrolled down
 
 
 S = State()
@@ -318,6 +326,11 @@ def icon(name, cx, cy, c):
     elif name == "music_app":                            # a note
         oval(cx - 4, cy + 8, 5.5, 4.5, fill=c)
         stroke([(cx + 1, cy + 8), (cx + 1, cy - 11), (cx + 10, cy - 7)], c, 2.2)
+    elif name == "play_order":                           # shuffle: two crossing arrows
+        stroke([(cx - 10, cy - 6), (cx + 10, cy + 6)], c, 2.2)
+        stroke([(cx - 10, cy + 6), (cx + 10, cy - 6)], c, 2.2)
+        stroke([(cx + 5, cy + 7), (cx + 10, cy + 6), (cx + 8, cy + 1)], c, 2.0)
+        stroke([(cx + 5, cy - 7), (cx + 10, cy - 6), (cx + 8, cy - 1)], c, 2.0)
     elif name == "ask_first":                            # a hand-up "wait": a ring with a check
         stroke([(cx - 8, cy + 1), (cx - 2, cy + 7), (cx + 9, cy - 7)], c, 2.4)
     elif name == "spotify":                              # three sound waves
@@ -428,7 +441,25 @@ def draw_brain():
 
 
 def row_rect(i):
-    return (ROW_X, ROW_Y + i * (ROW_H + ROW_GAP), ROW_W, ROW_H)
+    return (ROW_X, ROW_Y + i * (ROW_H + ROW_GAP) - S.settings_scroll, ROW_W, ROW_H)
+
+
+def max_scroll():
+    """How far the rows can scroll: 0 when they all fit."""
+    bottom = ROW_Y + len(ROWS) * (ROW_H + ROW_GAP) - ROW_GAP
+    return max(0.0, bottom - ROWS_BOTTOM)
+
+
+def scroll_settings(dy):
+    """Move the rows by dy (positive = further down the list), never past either end."""
+    S.settings_scroll = min(max(S.settings_scroll + dy, 0.0), max_scroll())
+    S.dirty = True
+
+
+def can_see(rect):
+    """Is a button's middle inside the scrolling area? (Hidden rows can't be clicked.)"""
+    middle = rect[1] + rect[3] / 2
+    return ROW_Y <= middle <= ROWS_BOTTOM
 
 
 def choice_rects(i, key):
@@ -437,17 +468,17 @@ def choice_rects(i, key):
     options = settings.CHOICES[key]
     each = 150
     left = x + w - 24 - each * len(options)
-    return [(option, (left + n * each, y + 16, each, 44)) for n, option in enumerate(options)]
+    return [(option, (left + n * each, y + (h - 44) / 2, each, 44)) for n, option in enumerate(options)]
 
 
 def toggle_rect(i):
     x, y, w, h = row_rect(i)
-    return (x + w - 24 - 78, y + 18, 78, 40)
+    return (x + w - 24 - 78, y + (h - 40) / 2, 78, 40)
 
 
 def connect_rect(i):
     x, y, w, h = row_rect(i)
-    return (x + w - 24 - 170, y + 18, 170, 40)
+    return (x + w - 24 - 170, y + (h - 40) / 2, 170, 40)
 
 
 def wrap(s, size, width, bold=False, kern=0.8):
@@ -606,6 +637,9 @@ def draw_settings():
     page()
     text("SETTINGS", 58, 104, 26, WHITE, True, 6.0, glow=6)
     text("your choices are saved on this Mac", 60, 138, 13, PALE, False, 1.0, 0.8)
+    NSGraphicsContext.saveGraphicsState()                   # rows only show inside the scrolling area
+    NSBezierPath.clipRect_(NSMakeRect(0, ROW_Y - 10, W, ROWS_BOTTOM - ROW_Y + 10))
+    CGContextBeginTransparencyLayer(NSGraphicsContext.currentContext().CGContext(), None)  # rows on their own layer
     for i, (key, title, about) in enumerate(ROWS):
         x, y, w, h = row_rect(i)
         pill((x, y, w, h), (10, 20, 10, 10), "br", fill=BLUE, fill_alpha=0.09, stroke=SKY, width=1.0, stroke_alpha=0.32)
@@ -641,6 +675,10 @@ def draw_settings():
             pill((tx, ty, tw, th), fill=BLUE if on else DEEP, fill_alpha=0.80 if on else 0.55,
                  stroke=WHITE if hov else BLUE, width=1.2, stroke_alpha=0.9 if hov else 0.6, glow=8 if on else 0)
             oval(tx + (tw - th / 2 if on else th / 2), ty + th / 2, th / 2 - 5, fill=CORE if on else GREY)
+    fade_edges()
+    CGContextEndTransparencyLayer(NSGraphicsContext.currentContext().CGContext())
+    NSGraphicsContext.restoreGraphicsState()
+    draw_scrollbar()
     hov = S.hover == "config"
     plate(CONFIG_BUTTON, fill=BLUE, fill_alpha=0.30 if hov else 0.06, stroke=WHITE if hov else SKY,
          width=1.2, stroke_alpha=0.9 if hov else 0.5)
@@ -648,6 +686,34 @@ def draw_settings():
              WHITE if hov else PALE, True, 2.5)
     text("opens config.py: the numbers behind the hand tracking", CONFIG_BUTTON[0] + CONFIG_BUTTON[2] + 18,
          CONFIG_BUTTON[1] + 12, 13, GREY, False, 0.8, 0.85)
+
+
+def fade_edges():
+    """Softly fade the rows where they scroll out of sight. "Destination in" keeps what's already drawn only as
+    much as the gradient is solid: like an eraser that rubs harder near the edge. Only fades an edge that has
+    more rows past it, so the list looks normal when it's all the way up or down."""
+    top, bottom = ROW_Y - 10, ROWS_BOTTOM
+    height = bottom - top
+    edge = FADE / height                                       # the fade's size, as a fraction of the area
+    fade_top, fade_bottom = S.settings_scroll > 0, S.settings_scroll < max_scroll()
+    colors = [NSColor.colorWithWhite_alpha_(1, 0 if fade_top else 1), NSColor.colorWithWhite_alpha_(1, 1),
+              NSColor.colorWithWhite_alpha_(1, 1), NSColor.colorWithWhite_alpha_(1, 0 if fade_bottom else 1)]
+    mask = NSGradient.alloc().initWithColors_atLocations_colorSpace_(colors, (0.0, edge, 1 - edge, 1.0),
+                                                             NSColorSpace.sRGBColorSpace())
+    CGContextSetBlendMode(NSGraphicsContext.currentContext().CGContext(), kCGBlendModeDestinationIn)
+    mask.drawInRect_angle_(NSMakeRect(0, top, W, height), 90)
+
+
+def draw_scrollbar():
+    """A thin bar right of the rows, so you can tell there's more below. Hidden when everything fits."""
+    if max_scroll() <= 0:
+        return
+    x, top, height = ROW_X + ROW_W + 8, ROW_Y, ROWS_BOTTOM - ROW_Y
+    shown = height / (height + max_scroll())               # how much of the list fits on screen
+    bar = height * shown
+    y = top + (height - bar) * S.settings_scroll / max_scroll()
+    pill((x, top, 4, height), 2, fill=SKY, fill_alpha=0.12)
+    pill((x, y, 4, bar), 2, fill=SKY, fill_alpha=0.75, glow=6)
 
 
 # ---- the whole window -------------------------------------------------------------------------------
@@ -739,14 +805,16 @@ def buttons():
     if S.tab == "settings" and sp.setup.step != "closed":
         out += [(name, rect) for name, rect, _, _ in spotify_buttons()]
     elif S.tab == "settings":
+        rows = []
         for i, (key, _, _) in enumerate(ROWS):
             if key == "spotify":
-                out.append(("connect", connect_rect(i)))
+                rows.append(("connect", connect_rect(i)))
             elif key in settings.CHOICES:
-                out += [(f"set:{key}:{option}", rect) for option, rect in choice_rects(i, key)]
+                rows += [(f"set:{key}:{option}", rect) for option, rect in choice_rects(i, key)]
             else:
                 tx, ty, tw, th = toggle_rect(i)
-                out.append((f"toggle:{key}", (tx - 50, ty - 4, tw + 54, th + 8)))
+                rows.append((f"toggle:{key}", (tx - 50, ty - 4, tw + 54, th + 8)))
+        out += [(name, rect) for name, rect in rows if can_see(rect)]     # scrolled out of sight: not clickable
         out.append(("config", CONFIG_BUTTON))
     return out
 
@@ -847,6 +915,14 @@ class HubView(NSView):
         name = hit(where(self, event))
         if name != S.hover:
             S.hover, S.dirty = name, True
+
+    def scrollWheel_(self, event):
+        """Trackpad, mouse wheel, or the hand-tracking scroll: moves the SETTINGS rows."""
+        if S.tab != "settings" or sp.setup.step != "closed":
+            return
+        dy = event.scrollingDeltaY()
+        scroll_settings(-dy if event.hasPreciseScrollingDeltas() else -dy * WHEEL_STEP)
+        S.hover = hit(where(self, event))                   # the row under the pointer changed
 
     def mouseExited_(self, event):
         S.hover, S.dirty = None, True

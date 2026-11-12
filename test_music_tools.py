@@ -12,6 +12,7 @@ import unittest
 from unittest import mock
 
 import music_tools
+import settings
 import spotify_connect
 from spotify_connect import SpotifyError
 
@@ -30,6 +31,10 @@ class FakeSpotify(unittest.TestCase):
         self.answers = {"/me/playlists": {"items": [GYM, CHILL], "next": None}}
         self.songs = {"get lucky": GET_LUCKY}            # what the fake search can find
         self.fail_next_play_with = None                  # set to 404 to pretend no device is awake
+        self.settings = dict(settings.DEFAULTS)          # pretend Settings, so your real settings.json is never read
+        patcher = mock.patch("music_tools.settings.get", lambda key: self.settings[key])
+        patcher.start()
+        self.addCleanup(patcher.stop)
         for name, fake in (("get", self.fake_get), ("call", self.fake_call), ("connected", lambda: True)):
             patcher = mock.patch(f"spotify_connect.{name}", fake)
             patcher.start()
@@ -66,6 +71,21 @@ class PlayMusicTests(FakeSpotify):
 
     def test_in_order_turns_shuffle_off(self):
         music_tools.play_music("gym", "playlist", shuffle=False)
+        self.assertEqual(self.sent[0][3], {"state": "false"})
+
+    def test_play_order_setting_is_used_when_you_dont_say(self):
+        for choice, sent in (("Shuffle", "true"), ("In order", "false")):
+            self.sent, self.settings["play_order"] = [], choice
+            music_tools.play_music("gym", "playlist")
+            self.assertEqual(self.sent[0], ("PUT", "/me/player/shuffle", None, {"state": sent}))
+
+    def test_as_is_leaves_shuffle_alone(self):
+        self.settings["play_order"] = "As is"
+        music_tools.play_music("gym", "playlist")
+        self.assertEqual([path for _, path, _, _ in self.sent], ["/me/player/play"])
+
+    def test_saying_in_order_beats_the_shuffle_setting(self):
+        music_tools.play_music("gym", "playlist", shuffle=False)       # the setting is Shuffle by default
         self.assertEqual(self.sent[0][3], {"state": "false"})
 
     def test_wakes_spotify_and_retries_when_no_device_is_active(self):
