@@ -114,7 +114,7 @@ class ToolSentencesAreShownAsIs(unittest.TestCase):
         self.model.side_effect = [fake_model_reply("play_music", {"what": "nouvelle vague"}),
                                   fake_model_reply("open_app", {"name": "Safari"})]
         reply = brain.think([], "play nouvelle vague and open safari")
-        self.assertEqual(reply, "Opened Safari.")
+        self.assertEqual(reply, "Playing nouvelle vague by wave to earth. Opened Safari.")   # both rounds' words
         self.assertEqual(self.model.call_count, 2)                 # one extra round, not a third reword
 
     def test_extra_round_with_nothing_left_uses_rexs_words(self):   # e.g. "Simon and Garfunkel"

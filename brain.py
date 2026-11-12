@@ -108,6 +108,7 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
     if action:                             # a plain "skip" etc: no model needed
         return run_shortcut(messages, action, on_tool)
 
+    said_before = []                       # tool sentences from earlier rounds, so a step 2 doesn't hide step 1
     for round_number in range(config.MAX_TOOL_ROUNDS):
         response = ollama.chat(
             model=config.MODEL,
@@ -134,8 +135,9 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
             results.append(result)
 
         if not needs_another_round(user_text, results, first_round=round_number == 0):
-            reply = " ".join(results)      # the tools' own words, names exactly right
+            reply = " ".join(said_before + results)   # the tools' own words, names exactly right
             messages.append({"role": "assistant", "content": reply})
             return reply
+        said_before = said_before + results   # going another round: keep what's been done so far
 
     return "I hit my limit of tool calls for one request, so I stopped."
