@@ -32,6 +32,10 @@ SHORTCUTS = {
 }
 POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip please" counts as "skip"
 
+# These tools already answer in a correct, finished sentence ("Playing X by Y."), so we show it as-is.
+# Letting the model reword it is how song and artist names got swapped in testing. Also saves a model call.
+SPEAKS_FOR_ITSELF = {"play_music", "queue_song", "music_controls", "now_playing"}
+
 
 def shortcut_action(user_text: str) -> str | None:
     """'Skip!' -> 'skip'. Returns None for anything that isn't a plain one-word-ish command."""
@@ -97,6 +101,7 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
         if not calls:                      # plain answer -> we're done
             return response.message.content
 
+        results = []
         for call in calls:                 # run every tool it asked for
             name = call.function.name
             args = call.function.arguments or {}
@@ -104,5 +109,11 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
             if on_tool:
                 on_tool(name, args, result)
             messages.append({"role": "tool", "tool_name": name, "content": result})
+            results.append(result)
+
+        if all(call.function.name in SPEAKS_FOR_ITSELF for call in calls):
+            reply = " ".join(results)      # the tools' own words, names exactly right
+            messages.append({"role": "assistant", "content": reply})
+            return reply
 
     return "I hit my limit of tool calls for one request, so I stopped."

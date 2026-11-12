@@ -8,6 +8,7 @@ blows up if it's ever called, so a test fails loudly if a shortcut accidentally 
 """
 
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 import brain
@@ -68,6 +69,45 @@ class ShortcutsSkipTheModel(unittest.TestCase):
         seen = []
         brain.think([], "next", on_tool=lambda name, args, result: seen.append(name))
         self.assertEqual(seen, ["music_controls"])
+
+
+def fake_model_reply(tool_name="", args=None, content=""):
+    """What ollama.chat hands back: either a tool call (tool_name set) or plain words (content)."""
+    calls = [SimpleNamespace(function=SimpleNamespace(name=tool_name, arguments=args or {}))] if tool_name else None
+    return SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=calls))
+
+
+class MusicSentencesAreShownAsIs(unittest.TestCase):
+    """The music tools already write a correct sentence, so Rex shows it instead of rewording it
+    (rewording is where he swapped song and artist names in testing)."""
+
+    def setUp(self):
+        self.model = mock.Mock()
+        tool_sentence = "Playing nouvelle vague by wave to earth."
+        for target, fake in (("brain.run_tool", lambda name, args: tool_sentence),
+                             ("brain.ollama.chat", self.model)):
+            patcher = mock.patch(target, fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_play_music_reply_is_the_tool_sentence_word_for_word(self):
+        self.model.side_effect = [fake_model_reply("play_music", {"what": "nouvelle vague"})]
+        reply = brain.think([], "play nouvelle vague by wave to earth")
+        self.assertEqual(reply, "Playing nouvelle vague by wave to earth.")
+        self.assertEqual(self.model.call_count, 1)                 # no second "reword it" call
+
+    def test_shown_sentence_is_remembered_as_the_reply(self):
+        self.model.side_effect = [fake_model_reply("play_music", {"what": "nouvelle vague"})]
+        messages = []
+        brain.think(messages, "play nouvelle vague")
+        self.assertEqual(messages[-1], {"role": "assistant", "content": "Playing nouvelle vague by wave to earth."})
+
+    def test_other_tools_still_get_a_reply_from_rex(self):
+        self.model.side_effect = [fake_model_reply("make_playlist", {"name": "chill", "songs": []}),
+                                  fake_model_reply(content="Made your chill playlist!")]
+        reply = brain.think([], "make a chill playlist")
+        self.assertEqual(reply, "Made your chill playlist!")
+        self.assertEqual(self.model.call_count, 2)
 
 
 if __name__ == "__main__":
