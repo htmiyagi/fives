@@ -97,10 +97,11 @@ def study_mode() -> str:
 
 
 # ---------------------------------------------------------------------------
-# Music (Spotify Premium). The code lives in music_tools.py; this just puts it on the menu.
+# Music. The code lives in music_tools.py; this just puts it on the menu. (music_controls works without Premium.)
 # ---------------------------------------------------------------------------
-from music_tools import (add_to_playlist, delete_playlist, make_playlist, now_playing,  # noqa: E402
-                         play_music, queue_song)
+from music_tools import (add_to_playlist, delete_playlist, make_playlist, music_controls,  # noqa: E402
+                         now_playing, play_music, queue_song)
 
-for music_tool in (play_music, queue_song, now_playing, make_playlist, add_to_playlist, delete_playlist):
+for music_tool in (play_music, music_controls, queue_song, now_playing, make_playlist, add_to_playlist,
+                   delete_playlist):
     tool(music_tool)

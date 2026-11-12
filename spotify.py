@@ -108,6 +108,14 @@ def play_pause() -> None:
     _tell("playpause")
 
 
+def pause() -> None:
+    _tell("pause")          # unlike playpause, never starts the music by accident
+
+
+def resume() -> None:
+    _tell("play")           # plays whatever is loaded in the player bar
+
+
 def next_track() -> None:
     _tell("next track")
 
