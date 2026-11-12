@@ -16,6 +16,8 @@ its rows in ROWS over there.
 import json
 from pathlib import Path
 
+import wheel_logic
+
 FILE = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULTS = {
@@ -24,6 +26,7 @@ DEFAULTS = {
     "ask_first": True,           # show me before anything is sent or deleted
     "speak_replies": False,      # read answers out loud
     "now_playing_popup": True,   # the little "PLAYING ..." note in the top-right corner (indicator.py)
+    "wheel_order": list(wheel_logic.DEFAULT_ORDER),   # the wheel's wedges, clockwise from the top
 }
 CHOICES = {
     "music_app": ["Spotify", "Apple Music"],
