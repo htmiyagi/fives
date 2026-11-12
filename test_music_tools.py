@@ -126,6 +126,50 @@ class OtherToolTests(FakeSpotify):
                 self.assertEqual(reply, music_tools.NOT_CONNECTED)
 
 
+class DeletePlaylistTests(FakeSpotify):
+    def setUp(self):
+        super().setUp()
+        self.mine = {**GYM, "owner": {"id": "hoyu"}, "items": {"total": 32}}
+        self.theirs = {**CHILL, "owner": {"id": "someone_else"}, "items": {"total": 50}}
+        self.answers["/me/playlists"] = {"items": [self.mine, self.theirs], "next": None}
+        self.answers["/me"] = {"id": "hoyu"}
+        self.asked = []                                     # every question the (fake) passcode box was asked
+        self.box_says = True
+
+        def fake_ask(question):
+            self.asked.append(question)
+            return self.box_says
+        patcher = mock.patch("music_tools.confirm_box.ask", fake_ask)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_deletes_only_after_the_box_says_yes(self):
+        reply = music_tools.delete_playlist("gim")                       # a typo still finds "Gym"
+        self.assertEqual(self.asked, ["Delete 'Gym' (32 songs)? You can recover it for 90 days."])
+        self.assertEqual(self.sent, [("DELETE", "/me/library", None, {"uris": "spotify:playlist:gym1"})])
+        self.assertIn("Deleted 'Gym'. You can get it back for 90 days", reply)
+
+    def test_nothing_is_deleted_when_the_box_says_no(self):
+        self.box_says = False
+        reply = music_tools.delete_playlist("gym")
+        self.assertEqual(reply, "Didn't delete 'Gym': it wasn't confirmed in the passcode box.")
+        self.assertEqual(self.sent, [])
+
+    def test_unknown_playlist_never_opens_the_box(self):
+        reply = music_tools.delete_playlist("road trip")
+        self.assertIn("No playlist called 'road trip'", reply)
+        self.assertEqual((self.asked, self.sent), ([], []))
+
+    def test_someone_elses_playlist_is_only_unfollowed(self):
+        reply = music_tools.delete_playlist("chill vibes")
+        self.assertEqual(self.asked, ["Delete 'Chill Vibes' (50 songs)?"])  # no "recover": it isn't yours
+        self.assertIn("Removed 'Chill Vibes' from your library", reply)
+
+    def test_missing_permission_says_how_to_fix_it(self):
+        with mock.patch("spotify_connect.call", side_effect=SpotifyError("no", 403)):
+            self.assertIn("CONNECT SPOTIFY again", music_tools.delete_playlist("gym"))
+
+
 class CallTests(unittest.TestCase):
     def test_a_reply_that_is_not_json_counts_as_done(self):
         # The real queue endpoint answers with plain text, which used to crash call()

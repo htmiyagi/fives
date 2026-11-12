@@ -21,12 +21,14 @@ import functools
 import subprocess
 import time
 
+import confirm_box
 import spotify_connect
 from spotify_connect import SpotifyError
 
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
+RECOVER_PAGE = "spotify.com/account/recover-playlists"     # where deleted playlists can be brought back (90 days)
 MATCH_CUTOFF = 0.6          # how close a playlist name has to be (0 = anything, 1 = exact) to count as a match
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
@@ -312,3 +314,47 @@ def add_to_playlist(playlist: str, song: str = "") -> str:
     except SpotifyError as err:
         return _explain(err)
     return f"Added {_describe(item)} to {target.get('name', playlist)}."
+
+
+@never_crash
+def delete_playlist(playlist: str) -> str:
+    """Delete one of the user's Spotify playlists, found by its name. Before anything is deleted, a FIVES box
+    pops up on screen and the user types their passcode there. You never need, ask for, or see the passcode.
+
+    Args:
+        playlist: The playlist's name. Close is fine, for example "gym" finds "Gym".
+    """
+    if not spotify_connect.connected():
+        return NOT_CONNECTED
+    try:
+        target, everything = _find_my_playlist(playlist)
+        if not target:
+            return f"No playlist called '{playlist}'. Your playlists: {_list_names(everything)}."
+        name, mine = target.get("name", playlist), _is_mine(target)
+        # The box shows the EXACT name, so a wrong fuzzy match gets caught by the person, not deleted
+        if not confirm_box.ask(_delete_question(name, target, mine)):
+            return f"Didn't delete '{name}': it wasn't confirmed in the passcode box."
+        spotify_connect.call("DELETE", "/me/library", uris=target["uri"])
+    except SpotifyError as err:
+        if err.status == 403:
+            return ("Spotify didn't allow deleting. FIVES may need one more permission: "
+                    "do CONNECT SPOTIFY again in Settings.")
+        return _explain(err)
+    if mine:
+        return f"Deleted '{name}'. You can get it back for 90 days at {RECOVER_PAGE}."
+    return f"Removed '{name}' from your library (it's someone else's playlist, so it still exists for them)."
+
+
+def _is_mine(playlist: dict) -> bool:
+    """Did this person make the playlist? (Otherwise "delete" just unfollows someone else's.)"""
+    owner = (playlist.get("owner") or {}).get("id")
+    return bool(owner) and owner == spotify_connect.get("/me").get("id")
+
+
+def _delete_question(name: str, playlist: dict, mine: bool) -> str:
+    """What the passcode box asks, for example "Delete 'Gym' (32 songs)? You can recover it for 90 days." """
+    # Spotify renamed "tracks" to "items" in 2026; read either
+    total = (playlist.get("items") or playlist.get("tracks") or {}).get("total")
+    songs = f" ({total} songs)" if isinstance(total, int) else ""
+    after = " You can recover it for 90 days." if mine else ""
+    return f"Delete '{name}'{songs}?{after}"
