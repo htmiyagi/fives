@@ -53,13 +53,18 @@ from Quartz import (CGContextBeginTransparencyLayer, CGContextEndTransparencyLay
 import eyes_link
 import settings
 import spotify_connect as sp
+import warmup
 
 HERE = Path(__file__).resolve().parent
 try:
     import config
     MODEL = config.MODEL
+    KEEP_ALIVE = config.KEEP_ALIVE
+    CONTEXT_TOKENS = config.CONTEXT_TOKENS
 except Exception:
     MODEL = "qwen3.6:35b"
+    KEEP_ALIVE = "2h"
+    CONTEXT_TOKENS = 16384
 
 # ---- look ------------------------------------------------------------------------------------------
 W, H = 1000, 652                 # design size. The window can be resized; everything scales with it
@@ -169,12 +174,17 @@ def quit_fives(*_):
 
 
 def brain_loop():
-    """Every few seconds: is the Ollama app running, and does it have our model? (The orb shows the answer.)"""
+    """Every few seconds: is the Ollama app running, and does it have our model? (The orb shows the answer.)
+    The first time the model is there, load it into memory in the background so Rex's first answer is fast."""
+    warmed = False
     while True:
         try:
             with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1.5) as reply:
                 names = [m.get("name", "") for m in json.loads(reply.read()).get("models", [])]
             S.brain = "ready" if (MODEL in names or MODEL + ":latest" in names) else "missing"
+            if S.brain == "ready" and not warmed:
+                warmup.warm_up_in_background(MODEL, KEEP_ALIVE, CONTEXT_TOKENS)
+                warmed = True
         except Exception:
             S.brain = "asleep"
         time.sleep(4)
