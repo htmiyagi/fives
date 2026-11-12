@@ -59,7 +59,7 @@ class FakeSpotify(unittest.TestCase):
         self.searched.append(path)                       # every GET path, so tests can check what was looked up
         if path == "/search":
             song = self.songs.get(params["q"].lower())
-            return {"tracks": {"items": [song] if song else []}}
+            return {"tracks": {"items": song if isinstance(song, list) else [song] if song else []}}
         return self.answers.get(path, {})
 
     def fake_call(self, method, path, body=None, **params):
@@ -387,6 +387,61 @@ class WeakMatchTests(FakeSpotify):
         self.songs["zzqx"] = self.song("Sweetness", "Elliot James Reay")
         self.assertIn("Didn't add anything", music_tools.add_to_playlist("gym", "zzqx"))
         self.assertEqual(self.sent, [])
+
+
+def song(name, *artists, uri="x"):
+    """A made-up search result."""
+    return {"type": "track", "uri": f"spotify:track:{uri}", "name": name, "artists": [{"name": a} for a in artists]}
+
+
+# Real results Spotify gave (Nov 2026), trimmed
+USS_RESULTS = [song("あーーっす！", "Hiroshi Kitadani", uri="uss"), song("ウィーゴー！", "Hiroshi Kitadani"),
+               song("Usseewa", "Ado", uri="ado")]
+NIP_RESULTS = [song("Niggas in Paris (In the Style of JAY Z & Kanye West)", "Instrumental King"),
+               song("Niggas in Paris", "The Official (Karaoke)"),
+               song("Ni**as In Paris", "JAŸ-Z", "Kanye West", uri="real")]
+
+
+class SmarterSearchTests(FakeSpotify):
+    def test_the_artist_you_named_wins(self):                  # "play USS!! by hiroshi kitadani" played Ado
+        self.assertEqual(music_tools.best_result(USS_RESULTS, "USS!!", "hiroshi kitadani")["uri"], "spotify:track:uss")
+
+    def test_no_artist_named_takes_spotifys_best(self):
+        self.assertEqual(music_tools.best_result(USS_RESULTS, "USS!!")["uri"], "spotify:track:uss")
+
+    def test_none_by_that_artist_still_gives_the_best_match(self):   # Rex sometimes guesses an artist
+        self.assertEqual(music_tools.best_result(USS_RESULTS, "USS!!", "Taylor Swift")["uri"], "spotify:track:uss")
+
+    def test_karaoke_and_in_the_style_of_copies_are_skipped(self):   # the "by Kanye" cover
+        self.assertEqual(music_tools.best_result(NIP_RESULTS, "Niggas in Paris")["uri"], "spotify:track:real")
+        self.assertEqual(music_tools.best_result(NIP_RESULTS, "Niggas in Paris", "kanye")["uri"], "spotify:track:real")
+
+    def test_a_copy_is_fine_if_you_asked_for_one(self):
+        picked = music_tools.best_result(NIP_RESULTS, "Niggas in Paris karaoke")
+        self.assertIn("Karaoke", picked["artists"][0]["name"])
+
+    def test_artist_names_compare_fairly(self):
+        self.assertTrue(music_tools.by_artist(NIP_RESULTS[2], "jay-z"))      # JAŸ-Z
+        self.assertTrue(music_tools.by_artist(NIP_RESULTS[2], "Kanye"))      # part of "Kanye West"
+        self.assertFalse(music_tools.by_artist(USS_RESULTS[2], "hiroshi kitadani"))
+
+    def test_play_music_uses_the_artist_box(self):
+        self.songs["uss!! hiroshi kitadani"] = USS_RESULTS
+        reply = music_tools.play_music("USS!!", "song", artist="hiroshi kitadani")
+        self.assertEqual(reply, "Playing あーーっす！ by Hiroshi Kitadani.")
+
+    def test_not_by_that_artist_plays_the_best_match_and_says_so(self):
+        self.songs["uss!! taylor swift"] = USS_RESULTS
+        reply = music_tools.play_music("USS!!", "song", artist="Taylor Swift")
+        self.assertEqual(reply, "No version by Taylor Swift, so playing あーーっす！ by Hiroshi Kitadani instead.")
+
+    def test_nothing_at_all_says_so_with_the_artist(self):
+        reply = music_tools.play_music("asdfgh", "song", artist="Taylor Swift")
+        self.assertEqual(reply, "Couldn't find a song called 'asdfgh' by Taylor Swift on Spotify.")
+
+    def test_queue_song_uses_the_artist_box_too(self):
+        self.songs["uss!! hiroshi kitadani"] = USS_RESULTS
+        self.assertIn("あーーっす！", music_tools.queue_song("USS!!", artist="hiroshi kitadani"))
 
 
 class NameMatchTests(unittest.TestCase):
