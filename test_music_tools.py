@@ -37,6 +37,10 @@ class FakeSpotify(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.app = {"state": "closed"}                   # the pretend Spotify APP (what AppleScript would say)
         self.told = []                                   # every command sent to the app ("pause", "play"...)
+        self.popups = []                                 # every indicator popup, instead of real windows
+        patcher = mock.patch("music_tools.indicator.show", lambda label, name: self.popups.append((label, name)))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         for name, fake in (("status", lambda: dict(self.app)), ("_tell", self.told.append)):
             patcher = mock.patch(f"spotify.{name}", fake)
             patcher.start()
@@ -78,6 +82,15 @@ class PlayMusicTests(FakeSpotify):
     def test_in_order_turns_shuffle_off(self):
         music_tools.play_music("gym", "playlist", shuffle=False)
         self.assertEqual(self.sent[0][3], {"state": "false"})
+
+    def test_playing_pops_the_indicator(self):
+        music_tools.play_music("my gym playlist", "playlist", shuffle=True)
+        music_tools.play_music("Get Lucky", "song")
+        self.assertEqual(self.popups, [("SHUFFLING playlist", "Gym"), ("PLAYING song", "Get Lucky")])
+
+    def test_nothing_found_pops_nothing(self):
+        music_tools.play_music("asdfgh", "song")
+        self.assertEqual(self.popups, [])
 
     def test_play_order_setting_is_used_when_you_dont_say(self):
         for choice, sent in (("Shuffle", "true"), ("In order", "false")):
@@ -230,6 +243,15 @@ class AppControlTests(FakeSpotify):
         self.app = {"state": "error"}
         self.assertEqual(music_tools.music_controls("resume"), music_tools.APP_PERMISSION)
         self.assertEqual(self.told, [])
+
+    def test_every_control_has_a_reply_and_a_popup_word(self):   # a missing word would crash that control
+        self.assertEqual(set(music_tools.CONTROLS), set(music_tools.CONTROLS_SAID))
+        self.assertEqual(set(music_tools.CONTROLS), set(music_tools.POPUP_SAID))
+
+    def test_controls_pop_the_indicator(self):
+        self.app = dict(self.BRUNO)
+        music_tools.music_controls("resume")
+        self.assertEqual(self.popups, [("RESUMED", "The Most Beautiful Thing")])
 
     def test_unknown_action(self):
         self.assertIn("not 'louder'", music_tools.music_controls("louder"))

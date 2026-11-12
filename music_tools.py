@@ -22,6 +22,7 @@ import subprocess
 import time
 
 import confirm_box
+import indicator
 import settings
 import spotify
 import spotify_connect
@@ -31,6 +32,8 @@ APP_PERMISSION = ("FIVES isn't allowed to control the Spotify app yet: System Se
                   "Automation, then turn on Spotify for Terminal.")
 CONTROLS = {"pause": spotify.pause, "resume": spotify.resume, "skip": spotify.next_track,
             "previous": spotify.previous_song, "restart": spotify.restart}
+POPUP_SAID = {"pause": "PAUSED", "resume": "RESUMED", "skip": "SKIPPED TO", "previous": "BACK TO",
+              "restart": "STARTED OVER"}
 CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to",
                  "restart": "Started over:"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
@@ -237,6 +240,7 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
     except SpotifyError as err:
         return _explain(err)
     order = {True: ", shuffled", False: ", in order", None: ""}[shuffle]
+    indicator.show(f"{'SHUFFLING' if shuffle else 'PLAYING'} {kind}", item.get("name", what))
     return f"Playing {_describe(item)}{order}."
 
 
@@ -329,6 +333,7 @@ def music_controls(action: str) -> str:
     if action in ("skip", "previous"):
         time.sleep(SETTLE_SECONDS)
         status = spotify.status()                       # the song changed: read it again
+    indicator.show(POPUP_SAID[action], status.get("title") or "")
     return f"{CONTROLS_SAID[action]} {_song(status)}."
 
 
