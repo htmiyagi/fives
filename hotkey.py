@@ -20,6 +20,10 @@ Input Monitoring > turn on Terminal (or the app you run Python from), then resta
 
 import time
 
+# The number keys along the top, by their macOS key code. (A number key has no "name" in pynput,
+# and with Option held it reports a symbol like ™ instead of "2", so the key code is the reliable way.)
+DIGIT_KEYCODES = {18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9"}
+
 # Each name you can use in config, and the keys that count for it.
 # (Left and right versions of a key both count.)
 KEY_GROUPS = {
@@ -30,17 +34,30 @@ KEY_GROUPS = {
     "option": ("alt", "alt_l", "alt_r", "alt_gr"),
     "space": ("space",),
     "esc": ("esc",),
+    **{digit: (digit,) for digit in DIGIT_KEYCODES.values()},      # "1" ... "9"
 }
 
 # macOS key codes, so we can recognise a key before anyone else sees it (for swallowing).
 KEYCODE_NAMES = {
     58: "alt_l", 61: "alt_r", 55: "cmd_l", 54: "cmd_r", 56: "shift_l", 60: "shift_r",
-    59: "ctrl_l", 62: "ctrl_r", 49: "space", 53: "esc",
+    59: "ctrl_l", 62: "ctrl_r", 49: "space", 53: "esc", **DIGIT_KEYCODES,
 }
 MODIFIER_KEYCODES = {58, 61, 55, 54, 56, 60, 59, 62}     # these arrive as "flags changed", not key down/up
+OPTION_KEYCODES = {58, 61}                                # left and right Option
 EVENT_KEY_DOWN, EVENT_KEY_UP, EVENT_FLAGS_CHANGED = 10, 11, 12
 
 MAX_TAP_SECONDS = 1.0       # a "tap" must be over within this long (longer = you were holding it)
+
+
+def key_name(key) -> str:
+    """pynput's key -> our name for it ("alt_l", "esc", "3"...), or "" for keys we don't use."""
+    return getattr(key, "name", None) or DIGIT_KEYCODES.get(getattr(key, "vk", None), "")
+
+
+def should_hide(name: str, swallow, swallow_with_option, option_down: bool) -> bool:
+    """Hide this key press from other apps? Always for `swallow`; for `swallow_with_option`, only
+    while Option is held (so Option+2 opens a wedge instead of typing ™, but a plain 2 still types 2)."""
+    return name in swallow or (option_down and name in swallow_with_option)
 
 
 class HotkeyWatcher:
@@ -51,6 +68,7 @@ class HotkeyWatcher:
     _held = set()         # key names that are down right now (shared by all watchers)
     _watchers = []        # every running watcher (told about each key press)
     _swallow = frozenset()      # key names to hide from other apps right now (see set_swallow)
+    _swallow_with_option = frozenset()  # key names to hide only while Option is held (see set_swallow_with_option)
     _swallowed = set()          # keycodes whose press we hid (so we hide their release too)
     _mod_down = set()           # modifier keycodes we think are down (flags-changed events only say "changed")
 
@@ -112,6 +130,11 @@ class HotkeyWatcher:
         cls._swallow = frozenset(k for n in names for k in KEY_GROUPS[n])
 
     @classmethod
+    def set_swallow_with_option(cls, names) -> None:
+        """Like set_swallow, but these keys are only hidden while Option is held down."""
+        cls._swallow_with_option = frozenset(k for n in names for k in KEY_GROUPS[n])
+
+    @classmethod
     def _intercept(cls, event_type, event):
         """Called by macOS-level hook BEFORE any app sees the key. Return the event to let it
         through, or None to hide it. Any trouble -> let it through (never block the keyboard)."""
@@ -128,7 +151,8 @@ class HotkeyWatcher:
             else:
                 is_down = event_type == EVENT_KEY_DOWN
             if is_down:
-                hide = name in cls._swallow
+                hide = should_hide(name, cls._swallow, cls._swallow_with_option,
+                                   bool(cls._mod_down & OPTION_KEYCODES))
                 if hide: cls._swallowed.add(code)
             else:
                 hide = code in cls._swallowed
@@ -157,17 +181,14 @@ class HotkeyWatcher:
                 print("Hotkeys off: run  pip install pynput  to use keyboard shortcuts from any app.")
                 return False
 
-            def name_of(key) -> str:
-                return getattr(key, "name", None) or ""
-
             def on_press(key):
-                name = name_of(key)
+                name = key_name(key)
                 cls._held.add(name)
                 for w in list(cls._watchers):
                     w._on_press(name)
 
             def on_release(key):
-                name = name_of(key)
+                name = key_name(key)
                 cls._held.discard(name)
                 for w in list(cls._watchers):
                     w._on_release(name)
@@ -197,6 +218,7 @@ class HotkeyWatcher:
                 cls._watchers.remove(self)
             if not cls._watchers and cls._listener is not None:
                 cls._swallow = frozenset()
+                cls._swallow_with_option = frozenset()
                 cls._listener.stop()
                 cls._listener = None
                 cls._held.clear()

@@ -94,6 +94,11 @@ def point_at(angle: float, radius: float, cx: float, cy: float) -> tuple[float, 
     return cx + radius * math.sin(a), cy - radius * math.cos(a)
 
 
+def wedge_for_number(number: int, order) -> str | None:
+    """Option+number: which window is in that spot of the wheel (1 = the first wedge), or None."""
+    return order[number - 1] if 1 <= number <= len(order) else None
+
+
 # ---------------------------------------------------------------------------
 # 3. Hover growth
 # ---------------------------------------------------------------------------

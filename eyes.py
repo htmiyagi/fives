@@ -40,6 +40,8 @@ import eyes_link
 import gestures as g
 import hotkey
 import hud as hud_mod
+import settings
+import wheel_logic
 import snap as snap_mod
 
 
@@ -662,6 +664,21 @@ def main() -> None:
     actions.connect_window("sketch", sketch)
     wheel = PanelLink("wheel.py", hidden=True, listen=True) if getattr(config, "FLICK", False) else None
     actions.connect_window("wheel", wheel)       # the palm swipe opens / closes it (GESTURES in actions.py)
+    wedge_keys = []                              # Option+1 ... Option+8: open whatever wedge is in that spot
+    for number in range(1, wheel_logic.MAX_WEDGES + 1):
+        watcher_n = hotkey.HotkeyWatcher(["option", str(number)])
+        if not watcher_n.start():                # no keyboard listener (it already said why): skip the rest
+            break
+        wedge_keys.append(watcher_n)
+
+    def wedge_key_picks():
+        """Wedges picked with Option+number since last frame. Follows the wheel order in settings, so
+        reordering the wheel moves the keys too. Only the numbers that have a wedge stop typing symbols."""
+        order = wheel_logic.clean_order(settings.get("wheel_order"))
+        if wedge_keys:
+            hotkey.HotkeyWatcher.set_swallow_with_option([str(n) for n in range(1, len(order) + 1)])
+        tapped = [n for n, key in enumerate(wedge_keys, start=1) if key.consume_tap()]
+        return [name for name in (wheel_logic.wedge_for_number(n, order) for n in tapped) if name]
     panel_key = None
     if panel is not None and getattr(config, "PANEL_HOTKEY", None):
         panel_key = hotkey.HotkeyWatcher(config.PANEL_HOTKEY)
@@ -848,7 +865,8 @@ def main() -> None:
                     pinch.pinched = False
                     pinch.armed = False
             wants_draw = False                  # the wheel's SKETCH wedge turns draw mode on, like the draw key
-            for picked in (wheel.take_picks() if wheel is not None else []):
+            picks = (wheel.take_picks() if wheel is not None else []) + wedge_key_picks()   # clicks + Option+number
+            for picked in picks:
                 if picked == "sketch" and toggle is not None and cursor_on:
                     wants_draw = wants_draw or not key_draw
                 else:
@@ -1216,7 +1234,7 @@ def main() -> None:
             sketch.close()
         if wheel is not None:
             wheel.close()
-        for w in (draw_watcher, toggle, pen_key, snap_key, panel_key):
+        for w in (draw_watcher, toggle, pen_key, snap_key, panel_key, *wedge_keys):
             if w is not None:
                 w.stop()
         frames.close()
