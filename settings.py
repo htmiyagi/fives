@@ -23,6 +23,7 @@ DEFAULTS = {
     "play_order": "Shuffle",     # what "play my playlist" does when you don't say shuffle or in order
     "ask_first": True,           # show me before anything is sent or deleted
     "speak_replies": False,      # read answers out loud
+    "now_playing_popup": True,   # the little "PLAYING ..." note in the top-right corner (indicator.py)
 }
 CHOICES = {
     "music_app": ["Spotify", "Apple Music"],

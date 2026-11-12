@@ -92,6 +92,7 @@ ROWS = [                         # the SETTINGS tab: (settings.py key, title, wh
     ("play_order", "PLAY ORDER", "What \"play my playlist\" does if you don't say"),
     ("ask_first", "ASK ME FIRST", "Show me before anything is sent or deleted"),
     ("speak_replies", "TALK BACK", "Read answers out loud"),
+    ("now_playing_popup", "NOW-PLAYING POPUP", "A quick note in the top right when the music changes"),
 ]
 ROW_X, ROW_Y, ROW_W, ROW_H, ROW_GAP = 56, 170, 888, 76, 12
 CONFIG_BUTTON = (56, 556, 318, 40)
@@ -331,6 +332,9 @@ def icon(name, cx, cy, c):
         stroke([(cx - 10, cy + 6), (cx + 10, cy - 6)], c, 2.2)
         stroke([(cx + 5, cy + 7), (cx + 10, cy + 6), (cx + 8, cy + 1)], c, 2.0)
         stroke([(cx + 5, cy - 7), (cx + 10, cy - 6), (cx + 8, cy - 1)], c, 2.0)
+    elif name == "now_playing_popup":                    # a small note in a screen's top-right corner
+        stroke([(cx - 11, cy - 8), (cx + 11, cy - 8), (cx + 11, cy + 8), (cx - 11, cy + 8), (cx - 11, cy - 8)], c, 1.8)
+        stroke([(cx + 1, cy - 4), (cx + 8, cy - 4)], c, 2.6)
     elif name == "ask_first":                            # a hand-up "wait": a ring with a check
         stroke([(cx - 8, cy + 1), (cx - 2, cy + 7), (cx + 9, cy - 7)], c, 2.4)
     elif name == "spotify":                              # three sound waves
