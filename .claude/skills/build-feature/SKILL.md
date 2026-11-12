@@ -22,8 +22,13 @@ WORKFLOW.md and GESTURES.md the whole way.
 - Add files by name. Never commit `config.py`, `settings.json`, `spotify_keys.json`, or anything gitignored.
 - **No real side effects while testing:** don't play / pause / change Spotify, don't send anything,
   don't delete anything, don't open other apps. Use fakes or the code's test hooks.
-- **Never turn on the webcam or load the model.** Don't run `hub.py`, `launcher.py` or `eyes.py`:
-  `hub.py` starts `eyes.py` (webcam) and warms up Ollama the moment it opens. Don't call Ollama at all.
+- **Never turn on the webcam.** Don't run `hub.py`, `launcher.py` or `eyes.py`: `hub.py` starts
+  `eyes.py` (webcam) and warms up Ollama the moment it opens.
+- **Ollama only if the feature file says `Ollama: allowed`.** Without that line, fake the model
+  (`mock.patch` on `ollama.chat`, like `test_brain.py`). With it, you may talk to the real model,
+  but **every tool stays faked**: the model "runs" a tool, the fake just records the call. Real-model
+  tests skip unless `FIVES_REAL_MODEL=1` is set (`@unittest.skipUnless(...)`), so the normal test run
+  never needs Ollama.
 - **Never use screen recording or screenshots of the screen** (`screencapture` etc.). Hoyu doesn't allow it.
   To see a window, draw it into an image yourself (see "Looking at it").
 - **Don't design or tune gestures.** That's Hoyu's (GESTURES.md). Hook up actions so gestures can be
@@ -51,6 +56,8 @@ Don't stop to ask. Make the reasonable choice and **write it down** for the PR.
    - Write tests for the logic (math, settings saving, order, keybind mapping, actions). Run all the
      repo's tests, not just new ones. Tests use `unittest` (no pytest), as `test_*.py` in the repo root:
      `.venv/bin/python -m unittest discover -p "test_*.py" -v`
+     If the feature file says `Ollama: allowed`, also run it once with `FIVES_REAL_MODEL=1` in front
+     and put the real model's results (which tool it picked for each phrase) in the PR.
    - **Smoke test:** start the feature's own window or module on its own, with a timeout (never
      `hub.py`, see Hard rules). Check it opens without errors and quits cleanly. Read what it printed.
      If the feature only lives inside `hub.py`, build just its view in a small script and render it

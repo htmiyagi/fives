@@ -24,6 +24,8 @@ Keep it tight. Hoyu is on the Pro plan.
 ## What to run
 
 - All tests: `.venv/bin/python -m unittest discover -p "test_*.py" -v`
+  (Real-model tests skip themselves without `FIVES_REAL_MODEL=1`. Don't set it: the builder already
+  ran them, so read their results in the PR notes instead of loading the model again.)
 - **No real side effects.** Don't start `hub.py`, `eyes.py` or `launcher.py` (they open the webcam
   and windows). Don't touch Spotify, Ollama, `osascript`, `open`, `say` or `shortcuts`. Never take
   screenshots or screen recordings. If the builder left PNG renders in `renders/`, you may look
@@ -59,6 +61,9 @@ Keep it tight. Hoyu is on the Pro plan.
 **Tests**
 - The logic has tests (math, settings saving, order, keybind mapping, actions).
 - Tests use fakes or temp files, never the real `settings.json`, Spotify or the network.
+- Ollama: if the feature file doesn't say `Ollama: allowed`, nothing may call the real model (MUST FIX).
+  If it does, real-model tests must skip without `FIVES_REAL_MODEL=1`, and **every tool in them must
+  be faked**. A real tool reachable from a real-model test is a MUST FIX.
 - All tests pass.
 
 ## How to grade
