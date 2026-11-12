@@ -429,6 +429,8 @@ def music_controls(action: str) -> str:
     Args:
         action: One of "pause", "resume", "skip", "previous" (the song before this one), or "restart" (this song
             from the beginning). Use "resume" for "play" / "play the song" when the user didn't name anything.
+            "Rewind", "start over", and "from the top" mean "restart", NOT "previous". Use "previous" only for
+            "back", "last song", or "previous song".
     """
     action = action.lower().strip()
     if action not in CONTROLS:
