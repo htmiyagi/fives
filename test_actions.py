@@ -59,16 +59,16 @@ class GestureMap(unittest.TestCase):
         for gesture, name in actions.GESTURES.items():
             self.assertIn(name, actions.ACTIONS, f"{gesture} -> {name}, but there's no such action")
 
-    def test_open_palm_flick_works_like_before(self):
-        self.assertEqual(actions.action_for("flick_right"), "hide_music")
-        self.assertEqual(actions.action_for("flick_left"), "show_music")
+    def test_open_palm_flick_opens_and_closes_the_wheel(self):
+        self.assertEqual(actions.action_for("flick_left"), "open_wheel")
+        self.assertEqual(actions.action_for("flick_right"), "close_wheel")
 
     def test_flick_on_the_sketch_window_puts_it_away(self):
         self.assertEqual(actions.action_for("flick_right", "sketch"), "put_away_sketch")
         self.assertEqual(actions.action_for("flick_left", "sketch"), "put_away_sketch")
 
     def test_window_with_no_special_line_falls_back_to_plain_gesture(self):
-        self.assertEqual(actions.action_for("flick_right", "calendar"), "hide_music")
+        self.assertEqual(actions.action_for("flick_right", "calendar"), "close_wheel")
 
     def test_unknown_gesture_means_nothing(self):
         self.assertIsNone(actions.action_for("thumbs_up"))

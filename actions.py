@@ -61,8 +61,8 @@ def run(name: str, **inputs) -> str:
 # "only while pointing at that window", and wins over the plain gesture.
 # ---------------------------------------------------------------------------
 GESTURES = {
-    "flick_right": "hide_music",              # open-palm swipe right (config.FLICK_HIDE)
-    "flick_left": "show_music",               # ...and back the other way
+    "flick_left": "open_wheel",               # open-palm swipe left: the wheel pops open
+    "flick_right": "close_wheel",             # ...swipe right: it closes
     "flick_right@sketch": "put_away_sketch",  # pointing at the sketch window: either swipe puts it away
     "flick_left@sketch": "put_away_sketch",
     # "fist": "pause",                        # <- how a music gesture will look once one exists
