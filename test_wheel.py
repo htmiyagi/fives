@@ -129,6 +129,11 @@ class WheelActions(unittest.TestCase):
         self.assertEqual(actions.run("hide_window", window="music"), "Music window put away.")
         self.assertEqual(music.sent, ["show", "hide"])
 
+    def test_tabs_are_called_tabs(self):
+        actions.connect_window("eyes", FakeWindow())
+        self.assertEqual(actions.run("open_window", window="eyes"), "Eyes tab opened.")
+        self.assertIn("tab in the FIVES window", actions.run("hide_window", window="eyes"))
+
     def test_hiding_sketch_forgets_where_it_was(self):
         sketch = FakeWindow()
         actions.connect_window("sketch", sketch)

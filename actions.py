@@ -148,7 +148,8 @@ def open_window(window: str) -> str:
     name = _window_name(window)
     if name is None:
         return f"FIVES has no window called '{window}'."
-    return _send(name, "show", f"{name.capitalize()} window opened.")
+    kind = "tab" if name in wheel_logic.HUB_TABS else "window"      # brain / eyes / settings are tabs
+    return _send(name, "show", f"{name.capitalize()} {kind} opened.")
 
 
 @action("hide_window", "Put one FIVES window away.", {"window": "which window, e.g. music or settings"})
@@ -156,6 +157,8 @@ def hide_window(window: str) -> str:
     name = _window_name(window)
     if name is None:
         return f"FIVES has no window called '{window}'."
+    if name in wheel_logic.HUB_TABS:
+        return f"{name.capitalize()} is a tab in the FIVES window, so there's nothing to put away."
     if name == "sketch":
         return put_away_sketch()          # the sketch window also has to forget where it was
     return _send(name, "hide", f"{name.capitalize()} window put away.")
