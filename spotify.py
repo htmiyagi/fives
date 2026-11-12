@@ -10,6 +10,7 @@ Nothing here touches the screen. panel.py draws the window and calls these funct
 """
 
 import subprocess
+import time
 
 SEP = "|||"
 
@@ -108,6 +109,14 @@ def play_pause() -> None:
     _tell("playpause")
 
 
+def pause() -> None:
+    _tell("pause")          # unlike playpause, never starts the music by accident
+
+
+def resume() -> None:
+    _tell("play")           # plays whatever is loaded in the player bar
+
+
 def next_track() -> None:
     _tell("next track")
 
@@ -122,6 +131,19 @@ def set_volume(percent: int) -> None:
 
 def seek(seconds: float) -> None:
     _tell(f"set player position to {max(0.0, float(seconds)):.1f}")
+
+
+def restart() -> None:
+    """Back to 0:00 of the song that's on."""
+    seek(0)
+
+
+def previous_song() -> None:
+    """The song BEFORE this one. Spotify's own "previous" only restarts the song if you're more than a few
+    seconds in, so first jump to 0:00: then "previous" really goes back."""
+    seek(0)
+    time.sleep(0.15)                       # give the app a moment to notice it's at the start
+    previous_track()
 
 
 def quit_app() -> None:

@@ -23,14 +23,22 @@ import time
 
 import confirm_box
 import settings
+import spotify
 import spotify_connect
 from spotify_connect import SpotifyError
 
+APP_PERMISSION = ("FIVES isn't allowed to control the Spotify app yet: System Settings > Privacy & Security > "
+                  "Automation, then turn on Spotify for Terminal.")
+CONTROLS = {"pause": spotify.pause, "resume": spotify.resume, "skip": spotify.next_track,
+            "previous": spotify.previous_song, "restart": spotify.restart}
+CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to",
+                 "restart": "Started over:"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
 RECOVER_PAGE = "spotify.com/account/recover-playlists"     # where deleted playlists can be brought back (90 days)
 MATCH_CUTOFF = 0.6          # how close a playlist name has to be (0 = anything, 1 = exact) to count as a match
+SETTLE_SECONDS = 0.4         # after a skip, the app needs a moment before it reports the new song
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
@@ -264,18 +272,64 @@ def queue_song(what: str) -> str:
 @never_crash
 def now_playing() -> str:
     """Say what song is playing on Spotify right now, who it's by, and what album it's from."""
-    if not spotify_connect.connected():
-        return NOT_CONNECTED
+    if not spotify_connect.connected():                 # no Premium connection: the app still knows
+        return _app_now_playing()
     try:
         playing = spotify_connect.get("/me/player/currently-playing")
     except SpotifyError as err:
         return _explain(err)
     item = playing.get("item")
-    if not item:                                        # empty answer = nothing playing
-        return "Nothing is playing on Spotify right now."
+    if not item:                                        # the internet side knows nothing: ask the app itself
+        return _app_now_playing()
     album = (item.get("album") or {}).get("name")
     state = "Playing" if playing.get("is_playing") else "Paused on"
     return f"{state} {_describe(item)}" + (f", from {album}." if album else ".")
+
+
+def _app_now_playing() -> str:
+    """What the Spotify APP has in its player bar (AppleScript). Works without Premium or internet, and knows a
+    paused song even when Spotify's servers think your Mac is asleep."""
+    status = spotify.status()
+    if status.get("state") == "error":
+        return APP_PERMISSION
+    if status.get("state") not in ("playing", "paused"):
+        return "Nothing is playing on Spotify right now."
+    word = "Playing" if status["state"] == "playing" else "Paused on"
+    return f"{word} {_song(status)}."
+
+
+def _song(status: dict) -> str:
+    """'The Most Beautiful Thing by Bruno Major' (or 'the next song' if the app didn't say)."""
+    if not status.get("title"):
+        return "the next song"
+    return f"{status['title']} by {status['artist']}" if status.get("artist") else status["title"]
+
+
+@never_crash
+def music_controls(action: str) -> str:
+    """Pause, resume, skip, go back, or start over on what's in the Spotify player right now. Works without Premium.
+
+    Args:
+        action: One of "pause", "resume", "skip", "previous" (the song before this one), or "restart" (this song
+            from the beginning). Use "resume" for "play" / "play the song" when the user didn't name anything.
+    """
+    action = action.lower().strip()
+    if action not in CONTROLS:
+        return f"I can pause, resume, skip, go back, or start over, not '{action}'."
+    status = spotify.status()
+    if status.get("state") == "error":
+        return APP_PERMISSION
+    if status.get("state") == "closed":
+        return "Spotify isn't open. Tell me what to play and I'll start it."
+    if status.get("state") == "stopped" and action == "resume":
+        return "Nothing is loaded in Spotify to resume. Tell me what to play."
+    if action == "pause" and status.get("state") == "paused":
+        return f"Already paused on {_song(status)}."
+    CONTROLS[action]()
+    if action in ("skip", "previous"):
+        time.sleep(SETTLE_SECONDS)
+        status = spotify.status()                       # the song changed: read it again
+    return f"{CONTROLS_SAID[action]} {_song(status)}."
 
 
 @never_crash

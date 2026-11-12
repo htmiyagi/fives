@@ -35,6 +35,12 @@ class FakeSpotify(unittest.TestCase):
         patcher = mock.patch("music_tools.settings.get", lambda key: self.settings[key])
         patcher.start()
         self.addCleanup(patcher.stop)
+        self.app = {"state": "closed"}                   # the pretend Spotify APP (what AppleScript would say)
+        self.told = []                                   # every command sent to the app ("pause", "play"...)
+        for name, fake in (("status", lambda: dict(self.app)), ("_tell", self.told.append)):
+            patcher = mock.patch(f"spotify.{name}", fake)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         for name, fake in (("get", self.fake_get), ("call", self.fake_call), ("connected", lambda: True)):
             patcher = mock.patch(f"spotify_connect.{name}", fake)
             patcher.start()
@@ -173,9 +179,69 @@ class OtherToolTests(FakeSpotify):
 
     def test_every_tool_asks_you_to_connect_first(self):
         with mock.patch("spotify_connect.connected", lambda: False):
-            for reply in (music_tools.play_music("x"), music_tools.queue_song("x"), music_tools.now_playing(),
+            for reply in (music_tools.play_music("x"), music_tools.queue_song("x"),
                           music_tools.make_playlist("x", ["y"]), music_tools.add_to_playlist("x")):
                 self.assertEqual(reply, music_tools.NOT_CONNECTED)
+
+
+class AppControlTests(FakeSpotify):
+    """music_controls and now_playing's backup: they talk to the Spotify APP, not the internet."""
+
+    BRUNO = {"state": "paused", "title": "The Most Beautiful Thing", "artist": "Bruno Major"}
+
+    def test_resume_plays_whats_loaded(self):                    # "play the song", the moment that started this
+        self.app = dict(self.BRUNO)
+        self.assertEqual(music_tools.music_controls("resume"), "Resumed The Most Beautiful Thing by Bruno Major.")
+        self.assertEqual(self.told, ["play"])
+
+    def test_pause(self):
+        self.app = dict(self.BRUNO, state="playing")
+        self.assertEqual(music_tools.music_controls("pause"), "Paused The Most Beautiful Thing by Bruno Major.")
+        self.assertEqual(self.told, ["pause"])
+
+    def test_pausing_when_already_paused_sends_nothing(self):
+        self.app = dict(self.BRUNO)
+        self.assertIn("Already paused", music_tools.music_controls("pause"))
+        self.assertEqual(self.told, [])
+
+    def test_previous_jumps_to_the_start_first_so_it_really_goes_back(self):   # the age-old rewind bug
+        self.app = dict(self.BRUNO, state="playing")
+        with mock.patch("spotify.time.sleep"), mock.patch("music_tools.time.sleep"):
+            music_tools.music_controls("previous")
+        self.assertEqual(self.told, ["set player position to 0.0", "previous track"])
+
+    def test_restart_goes_back_to_the_beginning_of_this_song(self):
+        self.app = dict(self.BRUNO, state="playing")
+        reply = music_tools.music_controls("restart")
+        self.assertEqual(self.told, ["set player position to 0.0"])
+        self.assertEqual(reply, "Started over: The Most Beautiful Thing by Bruno Major.")
+
+    def test_skip_reports_the_new_song(self):
+        self.app = dict(self.BRUNO, state="playing")
+        def next_song(command):
+            self.told.append(command)
+            self.app = {"state": "playing", "title": "Get Lucky", "artist": "Daft Punk"}
+        with mock.patch("spotify._tell", next_song), mock.patch("music_tools.time.sleep"):
+            self.assertEqual(music_tools.music_controls("skip"), "Skipped. Now playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.told, ["next track"])
+
+    def test_app_closed_or_not_allowed(self):
+        self.assertIn("isn't open", music_tools.music_controls("resume"))
+        self.app = {"state": "error"}
+        self.assertEqual(music_tools.music_controls("resume"), music_tools.APP_PERMISSION)
+        self.assertEqual(self.told, [])
+
+    def test_unknown_action(self):
+        self.assertIn("not 'louder'", music_tools.music_controls("louder"))
+
+    def test_now_playing_asks_the_app_when_the_internet_knows_nothing(self):   # your Mac looked "inactive"
+        self.app = dict(self.BRUNO)
+        self.assertEqual(music_tools.now_playing(), "Paused on The Most Beautiful Thing by Bruno Major.")
+
+    def test_now_playing_works_without_premium(self):
+        self.app = dict(self.BRUNO, state="playing")
+        with mock.patch("spotify_connect.connected", lambda: False):
+            self.assertEqual(music_tools.now_playing(), "Playing The Most Beautiful Thing by Bruno Major.")
 
 
 class DeletePlaylistTests(FakeSpotify):
