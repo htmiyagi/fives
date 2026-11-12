@@ -102,7 +102,7 @@ Keep this up to date. It's how collisions get avoided.
 
 | gesture | hand shape + motion | action | status |
 |---|---|---|---|
-| flick | open palm, swipe right / left | hide / show music window (or put the sketch away when pointing at it) | works; settings `FLICK_*` |
+| flick | open palm, swipe left / right | open / close the wheel (or put the sketch away when pointing at it) | works; settings `FLICK_*` |
 | pinch | thumb + index together | grab FIVES windows (reserved) | exists for clicking today; to be moved to grabbing |
 | skip | not decided yet | skip | **next: Hoyu designs it** |
 | previous / replay | not decided yet | previous / restart | after skip |

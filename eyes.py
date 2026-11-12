@@ -22,6 +22,7 @@ Gestures in cursor mode:
 """
 
 import math
+import queue
 import subprocess
 import sys
 import threading
@@ -332,7 +333,7 @@ def lock_window_shape(title: str, w: int, h: int) -> bool:
 
 
 # The short HUD message after a flick, per action.
-FLICK_FLASH = {"hide_music": "MUSIC HIDDEN", "show_music": "MUSIC SHOWN", "put_away_sketch": "SKETCH PUT AWAY"}
+FLICK_FLASH = {"open_wheel": "WHEEL", "close_wheel": "WHEEL CLOSED", "put_away_sketch": "SKETCH PUT AWAY"}
 
 
 class PanelLink:
@@ -347,6 +348,7 @@ class PanelLink:
         self.record = False                         # the sketch window's REC button is on (letter recording)
         self.pen_mode = None                        # the sketch window's PEN button: "grip" or "key"
         self.undo = threading.Event()               # UNDO pressed while recording: throw away that attempt
+        self.picked = queue.Queue()                 # the wheel's wedge clicks ("music", "sketch"...), waiting for the main loop
         if sys.platform != "darwin":
             return
         try:
@@ -381,8 +383,19 @@ class PanelLink:
                 self.record = word == "record 1"
             elif word == "undo":
                 self.undo.set()
+            elif word.startswith("open "):          # the wheel: a wedge was clicked
+                self.picked.put(word[5:])
+            elif word == "shown":                   # the wheel appeared (nothing to do)
+                pass
             elif word:
                 print(f"{script}: {word}")
+
+    def take_picks(self) -> list:
+        """Every wedge clicked since we last asked, oldest first (empty if none)."""
+        picks = []
+        while not self.picked.empty():
+            picks.append(self.picked.get())
+        return picks
 
     def send(self, word: str) -> None:
         if self.proc is None:
@@ -632,6 +645,8 @@ def main() -> None:
     sketch_snap_sent = None       # the last snap-pen state we told the sketch window about
     actions.connect_window("music", panel)       # so actions like hide_music can reach these windows
     actions.connect_window("sketch", sketch)
+    wheel = PanelLink("wheel.py", hidden=True, listen=True) if getattr(config, "FLICK", False) else None
+    actions.connect_window("wheel", wheel)       # the palm swipe opens / closes it (GESTURES in actions.py)
     panel_key = None
     if panel is not None and getattr(config, "PANEL_HOTKEY", None):
         panel_key = hotkey.HotkeyWatcher(config.PANEL_HOTKEY)
@@ -650,7 +665,7 @@ def main() -> None:
                 return link
         return None
     flash_text, flash_until = "", 0.0           # a short message in the HUD after a flick
-    if panel is not None and getattr(config, "FLICK", False):
+    if wheel is not None:
         flick = g.FlickDetector(config.FLICK_DISTANCE, config.FLICK_SECONDS, config.FLICK_COOLDOWN,
                                 palm_factor=config.FLICK_PALM_FACTOR)
     hud = (hud_mod.Hud(config.HUD_WIDTH, config.HUD_HEIGHT, config.HUD_VIEW, config.HUD_GLOW,
@@ -815,7 +830,13 @@ def main() -> None:
                     perform(keypen.resync())
                     pinch.pinched = False
                     pinch.armed = False
-            if toggle is not None and toggle.consume_tap() and cursor_on:
+            wants_draw = False                  # the wheel's SKETCH wedge turns draw mode on, like the draw key
+            for picked in (wheel.take_picks() if wheel is not None else []):
+                if picked == "sketch" and toggle is not None and cursor_on:
+                    wants_draw = wants_draw or not key_draw
+                else:
+                    print(f"wheel: {actions.run('open_window', window=picked)}")
+            if toggle is not None and (toggle.consume_tap() or wants_draw) and cursor_on:
                 if mouse is None:
                     mouse = Mouse()
                 key_draw = not key_draw
@@ -1176,6 +1197,8 @@ def main() -> None:
             panel.close()
         if sketch is not None:
             sketch.close()
+        if wheel is not None:
+            wheel.close()
         for w in (draw_watcher, toggle, pen_key, snap_key, panel_key):
             if w is not None:
                 w.stop()
