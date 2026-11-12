@@ -191,7 +191,7 @@ class AppControlTests(FakeSpotify):
 
     def test_resume_plays_whats_loaded(self):                    # "play the song", the moment that started this
         self.app = dict(self.BRUNO)
-        self.assertEqual(music_tools.music_controls("resume"), "Playing The Most Beautiful Thing by Bruno Major.")
+        self.assertEqual(music_tools.music_controls("resume"), "Resumed The Most Beautiful Thing by Bruno Major.")
         self.assertEqual(self.told, ["play"])
 
     def test_pause(self):

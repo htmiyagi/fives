@@ -31,7 +31,7 @@ APP_PERMISSION = ("FIVES isn't allowed to control the Spotify app yet: System Se
                   "Automation, then turn on Spotify for Terminal.")
 CONTROLS = {"pause": spotify.pause, "resume": spotify.resume, "skip": spotify.next_track,
             "previous": spotify.previous_track}
-CONTROLS_SAID = {"pause": "Paused", "resume": "Playing", "skip": "Skipped. Now playing", "previous": "Back to"}
+CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
