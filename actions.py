@@ -20,6 +20,8 @@ Try it:   .venv/bin/python actions.py        (prints the whole list)
 from dataclasses import dataclass, field
 from typing import Callable
 
+import wheel_logic     # just the wheel's list of windows and rules (no AppKit), so it's cheap to import
+
 
 @dataclass(frozen=True)
 class Action:
@@ -117,6 +119,46 @@ def put_away_sketch() -> str:
     if "sketch" in _windows:
         _windows["sketch"].frame = None      # it's gone, so nothing is "under the cursor" any more
     return said
+
+
+# ---------------------------------------------------------------------------
+# The wheel (wheel.py): FIVES's control room. Every window comes out of it and goes back into it.
+# open_window / hide_window take any window from wheel_logic.WINDOWS, so a wedge click, an Option+number
+# key, Rex, or a gesture all land in the same place. (The input is called `window` because run() already
+# uses `name` for the action's name.)
+# ---------------------------------------------------------------------------
+@action("open_wheel", "Open the wheel: the round menu of every FIVES window.")
+def open_wheel() -> str:
+    return _send("wheel", "show", "Wheel opened.")
+
+
+@action("close_wheel", "Close the wheel without opening anything.")
+def close_wheel() -> str:
+    return _send("wheel", "hide", "Wheel closed.")
+
+
+def _window_name(name) -> str | None:
+    """The window's proper name ("Music " -> "music"), or None if FIVES has no such window."""
+    cleaned = str(name).strip().lower()
+    return cleaned if cleaned in wheel_logic.WINDOWS else None
+
+
+@action("open_window", "Bring one FIVES window into view.", {"window": "which window, e.g. music or settings"})
+def open_window(window: str) -> str:
+    name = _window_name(window)
+    if name is None:
+        return f"FIVES has no window called '{window}'."
+    return _send(name, "show", f"{name.capitalize()} window opened.")
+
+
+@action("hide_window", "Put one FIVES window away.", {"window": "which window, e.g. music or settings"})
+def hide_window(window: str) -> str:
+    name = _window_name(window)
+    if name is None:
+        return f"FIVES has no window called '{window}'."
+    if name == "sketch":
+        return put_away_sketch()          # the sketch window also has to forget where it was
+    return _send(name, "hide", f"{name.capitalize()} window put away.")
 
 
 # ---------------------------------------------------------------------------
