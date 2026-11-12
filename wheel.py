@@ -17,7 +17,8 @@ Run by hand:   .venv/bin/python wheel.py          (shows right away; type show /
                .venv/bin/python wheel.py --hidden (starts hidden)
 
 The wedges and their order come from settings ("wheel_order"); the rules and math are in wheel_logic.py.
-Look: blue on near-black, Rajdhani, blues only. Sizes and colours are the constants just below: tweak freely.
+Look: the same as the music window (panel.py): frosted glass, grid, scan lines, neon frame with white armor
+edges, armor-plate highlights. Blues only, Rajdhani. Sizes and colours are the constants just below: tweak freely.
 """
 
 import math
@@ -25,11 +26,13 @@ import os
 import signal
 import sys
 import threading
+import time
 
 import objc
-from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSFont, NSFontAttributeName,
-                    NSForegroundColorAttributeName, NSGraphicsContext, NSKernAttributeName, NSMakeRect, NSScreen,
-                    NSShadow, NSString, NSTrackingArea, NSURL, NSView, NSWindow)
+from AppKit import (NSAppearance, NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor, NSFont,
+                    NSFontAttributeName, NSForegroundColorAttributeName, NSGraphicsContext, NSImage,
+                    NSKernAttributeName, NSMakeRect, NSScreen, NSShadow, NSString, NSTrackingArea, NSURL, NSView,
+                    NSVisualEffectView, NSWindow)
 from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
 
@@ -43,12 +46,16 @@ GAP = 2.0                        # degrees of empty space between two wedges
 DIM = 0.22                       # how much the rest of the screen darkens while the wheel is open (0 = not at all)
 ICON_AT = 0.56                   # where the icon sits, from the hole (0) to the outer edge (1)
 LABEL_SIZE = 22                  # the name that pops up on hover
-BLACK = (0.006, 0.016, 0.05)     # near-black
-DEEP = (0.010, 0.035, 0.11)      # the wheel's glass
+DISC = OUTER + 10                # the frosted glass disc's edge
+TINT_ALPHA = 0.36                # how dark the glass is (same as the music window). Lower = see more behind it
+TEXT_ALPHA = 0.80                # how solid the writing is (same as the music window)
+SWEEP = True                     # a faint bright band sliding down the glass, like the music window's hologram scan
+BLACK = (0.006, 0.016, 0.05)     # near-black (the screen dimming)
+INK = (0.02, 0.05, 0.12)         # the glass tint (same as the music window)
 BLUE = (0.16, 0.60, 1.0)         # the FIVES neon blue (same as hub.py and the music window)
-SKY = (0.42, 0.76, 1.0)
-PALE = (0.62, 0.86, 1.0)
-WHITE = (0.90, 0.96, 1.0)
+PALE = (0.55, 0.83, 1.0)
+WHITE = (0.86, 0.95, 1.0)        # cool white
+GREY = (0.45, 0.63, 0.82)        # cool blue-grey for quiet labels
 
 TICK = 1 / 60                    # redraw 60 times a second while open (for the smooth grow)
 EASE = 0.35                      # how quickly a wedge reaches its new size each tick (0..1, higher = snappier)
@@ -76,15 +83,24 @@ def polygon(points, closed=True):
     return p
 
 
+def glow_on(radius):
+    """Everything drawn until glow_off() gets a soft neon halo."""
+    NSGraphicsContext.saveGraphicsState()
+    shadow = NSShadow.alloc().init()
+    shadow.setShadowOffset_((0, 0))
+    shadow.setShadowBlurRadius_(radius)
+    shadow.setShadowColor_(color(BLUE, 0.9))
+    shadow.set()
+
+
+def glow_off():
+    NSGraphicsContext.restoreGraphicsState()
+
+
 def paint(p, fill=None, fill_alpha=1.0, stroke=None, width=1.0, stroke_alpha=1.0, glow=0):
     """Fill and/or outline a shape, with an optional soft blue glow."""
     if glow:
-        NSGraphicsContext.saveGraphicsState()
-        shadow = NSShadow.alloc().init()
-        shadow.setShadowOffset_((0, 0))
-        shadow.setShadowBlurRadius_(glow)
-        shadow.setShadowColor_(color(BLUE, 0.9))
-        shadow.set()
+        glow_on(glow)
     if fill is not None:
         color(fill, fill_alpha).set()
         p.fill()
@@ -94,7 +110,7 @@ def paint(p, fill=None, fill_alpha=1.0, stroke=None, width=1.0, stroke_alpha=1.0
         p.setLineCapStyle_(1)               # round ends
         p.stroke()
     if glow:
-        NSGraphicsContext.restoreGraphicsState()
+        glow_off()
 
 
 def circle(cx, cy, r, **look):
@@ -105,32 +121,53 @@ def line(points, c, width=2.0, alpha=1.0, glow=0):
     paint(polygon(points, closed=False), stroke=c, width=width, stroke_alpha=alpha, glow=glow)
 
 
-def text_mid(s, cx, cy, size, c, alpha=1.0, glow=0):
+def text_style(size, c, alpha=1.0, bold=True, kern=2.0):
+    return {NSFontAttributeName: font(size, bold), NSKernAttributeName: kern,
+            NSForegroundColorAttributeName: color(c, alpha * TEXT_ALPHA)}
+
+
+def text_mid(s, cx, cy, size, c, alpha=1.0, glow=0, bold=True, kern=2.0):
     """Text centred on (cx, cy)."""
-    style = {NSFontAttributeName: font(size, True), NSKernAttributeName: 2.0,
-             NSForegroundColorAttributeName: color(c, alpha)}
+    style = text_style(size, c, alpha, bold, kern)
     string = NSString.stringWithString_(s)
     w, h = string.sizeWithAttributes_(style)
     if glow:
-        NSGraphicsContext.saveGraphicsState()
-        shadow = NSShadow.alloc().init()
-        shadow.setShadowOffset_((0, 0))
-        shadow.setShadowBlurRadius_(glow)
-        shadow.setShadowColor_(color(BLUE, 0.9))
-        shadow.set()
+        glow_on(glow)
     string.drawAtPoint_withAttributes_((cx - w / 2, cy - h / 2), style)
     if glow:
-        NSGraphicsContext.restoreGraphicsState()
+        glow_off()
+
+
+def text_width(s, size, bold=True, kern=2.0):
+    return NSString.stringWithString_(s).sizeWithAttributes_(text_style(size, WHITE, 1.0, bold, kern)).width
+
+
+def rect(x, y, w, h, c, alpha):
+    color(c, alpha).set()
+    NSBezierPath.fillRect_(NSMakeRect(x, y, w, h))
+
+
+def chamfer(x, y, w, h, cut=6):
+    """A rectangle with its top-left and bottom-right corners cut off (the music window's armor-plate look)."""
+    return [(x + cut, y), (x + w, y), (x + w, y + h - cut), (x + w - cut, y + h), (x, y + h), (x, y + cut)]
+
+
+def arc(a0, a1, radius, cx, cy, steps=12):
+    """Points along a circle from clock angle a0 to a1."""
+    return [wheel_logic.point_at(a0 + (a1 - a0) * i / steps, radius, cx, cy) for i in range(steps + 1)]
+
+
+def wedge_edges(index, count):
+    """The clock angles where a wedge starts and ends (minus the little gap)."""
+    half = wheel_logic.wedge_size(count) / 2 - GAP / 2
+    mid = wheel_logic.wedge_middle(index, count)
+    return mid - half, mid + half
 
 
 def wedge_points(index, count, inner, outer, cx, cy, steps=24):
     """The outline of one wedge: along the outer edge, then back along the inner edge."""
-    half = wheel_logic.wedge_size(count) / 2 - GAP / 2
-    mid = wheel_logic.wedge_middle(index, count)
-    a0, a1 = mid - half, mid + half
-    out = [wheel_logic.point_at(a0 + (a1 - a0) * i / steps, outer, cx, cy) for i in range(steps + 1)]
-    back = [wheel_logic.point_at(a1 - (a1 - a0) * i / steps, inner, cx, cy) for i in range(steps + 1)]
-    return out + back
+    a0, a1 = wedge_edges(index, count)
+    return arc(a0, a1, outer, cx, cy, steps) + arc(a1, a0, inner, cx, cy, steps)
 
 
 # ---- placeholder icons (Hoyu will make Clone Wars style ones later) ----------------------------------
@@ -260,37 +297,104 @@ class WheelView(NSView):
         cx, cy = self.centre()
         pop = 0.85 + 0.15 * self.opening                             # grows from 85% to full size as it opens
         count = len(self.order)
-        circle(cx, cy, OUTER * pop + 10, fill=DEEP, fill_alpha=0.88 * self.opening,
-               stroke=SKY, width=1.0, stroke_alpha=0.25 * self.opening)
+        self.draw_glass(cx, cy, DISC * pop)
+        self.draw_frame(cx, cy, DISC * pop)
         for i, name in enumerate(self.order):
             if i != self.hovered:
                 self.draw_wedge(i, name, cx, cy, pop, count)
         if self.hovered is not None:                                 # the hovered one last, so its glow is on top
             self.draw_wedge(self.hovered, self.order[self.hovered], cx, cy, pop, count)
-        circle(cx, cy, INNER * pop - 10, stroke=SKY, width=1.2, stroke_alpha=0.35 * self.opening)
-        circle(cx, cy, 5, fill=BLUE, fill_alpha=self.opening, glow=10)   # the dot in the middle
+        self.draw_header(cx, cy, pop)
         if self.hovered is not None:
             self.draw_label(self.order[self.hovered], self.hovered, cx, cy, pop, count)
 
     @objc.python_method
+    def disc_rect(self):
+        """The square around the glass disc (all that needs redrawing for the scan sweep)."""
+        cx, cy = self.centre()
+        return NSMakeRect(cx - DISC - 20, cy - DISC - 20, 2 * DISC + 40, 2 * DISC + 40)
+
+    @objc.python_method
+    def draw_glass(self, cx, cy, r):
+        """The music window's glass, inside a circle: dark tint, a neon wash at the top, grid, scan lines."""
+        a = self.opening
+        NSGraphicsContext.saveGraphicsState()
+        disc = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(cx - r, cy - r, 2 * r, 2 * r))
+        disc.addClip()                                               # nothing below spills outside the circle
+        color(INK, TINT_ALPHA * a).set()
+        disc.fill()
+        left, top = cx - r, cy - r
+        for i in range(0, 120, 2):                                   # neon wash, fading out downward
+            rect(left, top + i, 2 * r, 2, BLUE, 0.20 * (1 - i / 120) * a)
+        for k in range(0, int(2 * r) + 1, 24):                       # faint grid
+            line([(left + k, top), (left + k, top + 2 * r)], BLUE, 0.5, 0.08 * a)
+            line([(left, top + k), (left + 2 * r, top + k)], BLUE, 0.5, 0.08 * a)
+        for k in range(0, int(2 * r), 3):                            # scan lines
+            rect(left, top + k, 2 * r, 0.6, WHITE, 0.035 * a)
+        if SWEEP:                                                    # a bright band slides down every few seconds
+            band = (time.time() * 55) % (2 * r + 120) - 60
+            for k in range(-22, 23, 2):
+                rect(left, top + band + k, 2 * r, 2, PALE, 0.10 * (1 - abs(k) / 23) * a)
+        NSGraphicsContext.restoreGraphicsState()
+
+    @objc.python_method
+    def draw_frame(self, cx, cy, r):
+        """Neon outer ring, thin inner ring, white armor edges at top-left and bottom-right, a tick ruler on top."""
+        a = self.opening
+        circle(cx, cy, r - 1, stroke=BLUE, width=1.8, stroke_alpha=a, glow=9)
+        circle(cx, cy, r - 6, stroke=BLUE, width=0.8, stroke_alpha=0.5 * a)
+        for mid in (315, 135):                                       # same corners as the music window's cuts
+            line(arc(mid - 12, mid + 12, r - 1, cx, cy), WHITE, 3, 0.95 * a, glow=7)
+        for n, angle in enumerate(range(-36, 37, 3)):                # tick ruler, every 5th tick longer
+            length = 6 if n % 5 == 0 else 3
+            line([wheel_logic.point_at(angle, r - 1, cx, cy), wheel_logic.point_at(angle, r - 1 - length, cx, cy)],
+                 WHITE, 1, 0.55 * a)
+
+    @objc.python_method
     def draw_wedge(self, i, name, cx, cy, pop, count):
+        """Each wedge is styled like the music window's PREV / PLAY / NEXT buttons."""
         hot = i == self.hovered
+        a = self.opening
         outer = OUTER * self.grown[i] * pop
         inner = INNER * pop
         shape = polygon(wedge_points(i, count, inner, outer, cx, cy))
-        paint(shape, fill=BLUE, fill_alpha=(0.30 if hot else 0.10) * self.opening,
-              stroke=PALE if hot else SKY, width=1.6 if hot else 1.0,
-              stroke_alpha=(0.95 if hot else 0.45) * self.opening, glow=16 if hot else 0)
+        paint(shape, fill=BLUE, fill_alpha=(0.50 if hot else 0.07) * a, stroke=BLUE,
+              width=1.5 if hot else 1.0, stroke_alpha=(1.0 if hot else 0.55) * a, glow=7 if hot else 2)
+        if hot:
+            self.draw_brackets(i, count, inner, outer, cx, cy)
         ix, iy = wheel_logic.point_at(wheel_logic.wedge_middle(i, count),
                                       inner + (outer - inner) * ICON_AT, cx, cy)
         icon(name, ix, iy, WHITE if hot else PALE, k=self.grown[i])
 
     @objc.python_method
+    def draw_brackets(self, i, count, inner, outer, cx, cy):
+        """White corner brackets on the hovered wedge, like the ones around the music window's album cover."""
+        arm = 11                                                     # how long each bracket arm is (points)
+        a0, a1 = wedge_edges(i, count)
+        for radius, inward in ((outer, -1), (inner, 1)):
+            turn = math.degrees(arm / radius)                        # the arm's length as an angle at this radius
+            for edge, along in ((a0, 1), (a1, -1)):                  # an L: along the edge, then in toward the middle
+                line(arc(edge + along * turn, edge, radius, cx, cy, 4)
+                     + [wheel_logic.point_at(edge, radius + inward * arm, cx, cy)], WHITE, 2, 0.95, glow=5)
+
+    @objc.python_method
+    def draw_header(self, cx, cy, pop):
+        """The middle of the wheel: a thin ring and the music window's header style."""
+        a = self.opening
+        circle(cx, cy, INNER * pop - 8, stroke=BLUE, width=0.8, stroke_alpha=0.5 * a)
+        text_mid("501ST LEGION", cx, cy - 11, 8, GREY, a, bold=False, kern=2.5)
+        text_mid("FIVES", cx, cy + 6, 17, WHITE, a, glow=7, kern=4.0)
+
+    @objc.python_method
     def draw_label(self, name, i, cx, cy, pop, count):
-        """The hovered window's name, popped up just outside its wedge."""
+        """The hovered window's name on an armor plate, popped up just outside its wedge."""
         lx, ly = wheel_logic.point_at(wheel_logic.wedge_middle(i, count),
                                       OUTER * (1 + wheel_logic.HOVER_GROW) * pop + 34, cx, cy)
-        text_mid(wheel_logic.WINDOWS.get(name, name.upper()), lx, ly, LABEL_SIZE, WHITE, glow=12)
+        label = wheel_logic.WINDOWS.get(name, name.upper())
+        w, h = text_width(label, LABEL_SIZE, kern=3.0) + 28, LABEL_SIZE + 10
+        paint(polygon(chamfer(lx - w / 2, ly - h / 2, w, h, 7)), fill=BLUE, fill_alpha=0.40, stroke=WHITE,
+              width=1.0, glow=5)
+        text_mid(label, lx, ly, LABEL_SIZE, WHITE, glow=7, kern=3.0)
 
 
 # ---- the window ------------------------------------------------------------------------------------------
@@ -321,10 +425,33 @@ class Controller(NSObject):
         win.setReleasedWhenClosed_(False)
         win.setCollectionBehavior_(1 | 16 | 256)         # all desktops + over full-screen apps
         size = screen.size
-        self.view = WheelView.alloc().initWithFrame_(NSMakeRect(0, 0, size.width, size.height))
+        whole = NSMakeRect(0, 0, size.width, size.height)
+        holder = NSView.alloc().initWithFrame_(whole)
+        win.setContentView_(holder)
+        self.fx = NSVisualEffectView.alloc().initWithFrame_(whole)   # frosted glass, like the music window
+        self.fx.setMaterial_(13)                                     # "HUD window" frosted glass
+        self.fx.setBlendingMode_(0)                                  # blur what is BEHIND the window
+        self.fx.setState_(1)                                         # stay frosted even when not active
+        self.fx.setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameVibrantDark"))
+        self.fx.setAutoresizingMask_(18)                             # follows the window's size
+        holder.addSubview_(self.fx)
+        self.view = WheelView.alloc().initWithFrame_(whole)          # drawn on top of the glass
+        self.view.setAutoresizingMask_(18)
         self.view.on_pick = self.pick
         self.view.on_close = self.hide
-        win.setContentView_(self.view)
+        holder.addSubview_(self.view)
+
+    @objc.python_method
+    def shape_glass(self):
+        """Only blur a circle in the middle (the window covers the whole screen, the glass doesn't)."""
+        size = self.win.frame().size
+        cx, cy = size.width / 2, size.height / 2
+
+        def handler(rect):
+            NSColor.whiteColor().set()
+            NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(cx - DISC, cy - DISC, 2 * DISC, 2 * DISC)).fill()
+            return True
+        self.fx.setMaskImage_(NSImage.imageWithSize_flipped_drawingHandler_(size, True, handler))
 
     @objc.python_method
     def show(self):
@@ -332,8 +459,10 @@ class Controller(NSObject):
             return
         self.view.reload_order()
         self.win.setFrame_display_(NSScreen.mainScreen().frame(), False)   # the screen you're on now
+        self.shape_glass()
         self.visible = True
         self.view.opening = 0.0
+        self.fx.setAlphaValue_(0.0)                                  # the glass fades in as the wheel pops open
         NSApplication.sharedApplication().activateIgnoringOtherApps_(True)  # so Esc comes to us
         self.win.makeKeyAndOrderFront_(None)
         self.win.makeFirstResponder_(self.view)
@@ -363,8 +492,11 @@ class Controller(NSObject):
         opening = self.view.opening < 1.0
         if opening:
             self.view.opening = min(1.0, self.view.opening + TICK / OPEN_SECONDS)
+            self.fx.setAlphaValue_(self.view.opening)
         if self.view.step() or opening:
             self.view.setNeedsDisplay_(True)
+        elif SWEEP:
+            self.view.setNeedsDisplayInRect_(self.view.disc_rect())   # keep the scan band moving (just the disc)
 
 
 def say(line: str) -> None:
