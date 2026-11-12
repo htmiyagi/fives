@@ -124,11 +124,11 @@ def text_mid(s, cx, cy, size, c, alpha=1.0, glow=0):
 
 def wedge_points(index, count, inner, outer, cx, cy, steps=24):
     """The outline of one wedge: along the outer edge, then back along the inner edge."""
-    half = wedge_logic.wedge_size(count) / 2 - GAP / 2
-    mid = wedge_logic.wedge_middle(index, count)
+    half = wheel_logic.wedge_size(count) / 2 - GAP / 2
+    mid = wheel_logic.wedge_middle(index, count)
     a0, a1 = mid - half, mid + half
-    out = [wedge_logic.point_at(a0 + (a1 - a0) * i / steps, outer, cx, cy) for i in range(steps + 1)]
-    back = [wedge_logic.point_at(a1 - (a1 - a0) * i / steps, inner, cx, cy) for i in range(steps + 1)]
+    out = [wheel_logic.point_at(a0 + (a1 - a0) * i / steps, outer, cx, cy) for i in range(steps + 1)]
+    back = [wheel_logic.point_at(a1 - (a1 - a0) * i / steps, inner, cx, cy) for i in range(steps + 1)]
     return out + back
 
 
@@ -242,6 +242,13 @@ class WheelView(NSView):
 
     # -- drawing ----------------------------------------------------------------------------------------
     def drawRect_(self, dirty):
+        try:
+            self.draw_all()
+        except Exception as err:        # a Python error inside AppKit's drawing would crash silently: say it instead
+            print("wheel: drawing failed:", repr(err), file=sys.stderr)
+
+    @objc.python_method
+    def draw_all(self):
         color(BLACK, DIM * self.opening).set()
         NSBezierPath.fillRect_(self.bounds())                       # darken the rest of the screen a little
         cx, cy = self.centre()
@@ -268,14 +275,14 @@ class WheelView(NSView):
         paint(shape, fill=BLUE, fill_alpha=(0.30 if hot else 0.10) * self.opening,
               stroke=PALE if hot else SKY, width=1.6 if hot else 1.0,
               stroke_alpha=(0.95 if hot else 0.45) * self.opening, glow=16 if hot else 0)
-        ix, iy = wedge_logic.point_at(wedge_logic.wedge_middle(i, count),
+        ix, iy = wheel_logic.point_at(wheel_logic.wedge_middle(i, count),
                                       inner + (outer - inner) * ICON_AT, cx, cy)
         icon(name, ix, iy, WHITE if hot else PALE, k=self.grown[i])
 
     @objc.python_method
     def draw_label(self, name, i, cx, cy, pop, count):
         """The hovered window's name, popped up just outside its wedge."""
-        lx, ly = wedge_logic.point_at(wedge_logic.wedge_middle(i, count),
+        lx, ly = wheel_logic.point_at(wheel_logic.wedge_middle(i, count),
                                       OUTER * (1 + wheel_logic.HOVER_GROW) * pop + 34, cx, cy)
         text_mid(wheel_logic.WINDOWS.get(name, name.upper()), lx, ly, LABEL_SIZE, WHITE, glow=12)
 
