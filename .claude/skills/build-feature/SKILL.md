@@ -23,7 +23,10 @@ WORKFLOW.md and GESTURES.md the whole way.
 - **No real side effects while testing:** don't play / pause / change Spotify, don't send anything,
   don't delete anything, don't open other apps. Use fakes or the code's test hooks.
 - **Never turn on the webcam.** Don't run `hub.py`, `launcher.py` or `eyes.py`: `hub.py` starts
-  `eyes.py` (webcam) and warms up Ollama the moment it opens.
+  `eyes.py` (webcam) and warms up Ollama the moment it opens. For anything hand-tracking related,
+  test by replaying Hoyu's saved recordings (hand landmark points, see GESTURES.md) through the
+  code. If the recordings you need don't exist yet, use made-up landmark points for the logic tests
+  and list the recordings Hoyu should make under CHECK BY HAND.
 - **Ollama only if the feature file says `Ollama: allowed`.** Without that line, fake the model
   (`mock.patch` on `ollama.chat`, like `test_brain.py`). With it, you may talk to the real model,
   but **every tool stays faked**: the model "runs" a tool, the fake just records the call. Real-model
