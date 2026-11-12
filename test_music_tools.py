@@ -28,7 +28,8 @@ class FakeSpotify(unittest.TestCase):
     def setUp(self):
         self.sent = []                                   # every (method, path, body, params) the tools sent
         self.searched = []                               # every GET path the tools asked for
-        self.answers = {"/me/playlists": {"items": [GYM, CHILL], "next": None}}
+        self.answers = {"/me/playlists": {"items": [GYM, CHILL], "next": None},
+                        "/me/player": {"is_playing": True}}      # after play, the servers say it's playing
         self.songs = {"get lucky": GET_LUCKY}            # what the fake search can find
         self.fail_next_play_with = None                  # set to 404 to pretend no device is awake
         self.settings = dict(settings.DEFAULTS)          # pretend Settings, so your real settings.json is never read
@@ -38,10 +39,14 @@ class FakeSpotify(unittest.TestCase):
         self.app = {"state": "closed"}                   # the pretend Spotify APP (what AppleScript would say)
         self.told = []                                   # every command sent to the app ("pause", "play"...)
         self.popups = []                                 # every indicator popup, instead of real windows
+        patcher = mock.patch("music_tools.time.sleep")   # checking "is it playing yet?" doesn't really wait
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch("music_tools.indicator.show", lambda label, name: self.popups.append((label, name)))
         patcher.start()
         self.addCleanup(patcher.stop)
-        for name, fake in (("status", lambda: dict(self.app)), ("_tell", self.told.append)):
+        for name, fake in (("status", lambda: dict(self.app)), ("_tell", self.told.append),
+                           ("is_running", lambda: self.app["state"] != "closed")):
             patcher = mock.patch(f"spotify.{name}", fake)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -144,6 +149,45 @@ class PlayMusicTests(FakeSpotify):
     def test_playlist_note_is_empty_when_spotify_fails(self):
         with mock.patch("spotify_connect.get", side_effect=SpotifyError("down", 500)):
             self.assertEqual(music_tools.playlist_note(), "")
+
+    def test_a_song_goes_straight_to_the_app(self):   # the bug: the servers' song-play said OK and stopped the music
+        self.app = {"state": "playing", "title": "Imagine", "artist": "John Lennon"}
+        def app_hears(command):
+            self.told.append(command)
+            if command.startswith("play track"):          # AppleScript's play works: now it really plays
+                self.app = {"state": "playing", "title": "Get Lucky", "artist": "Daft Punk"}
+        with mock.patch("spotify._tell", app_hears):
+            reply = music_tools.play_music("Get Lucky", "song")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.told, ['play track "spotify:track:lucky"'])
+        self.assertNotIn("/me/player/play", [path for _, path, _, _ in self.sent])     # servers never asked
+
+    def test_a_playlist_the_servers_ignore_gets_pressed_in_the_app(self):
+        self.app = {"state": "stopped"}                  # the servers say OK, nothing happens
+        def app_hears(command):
+            self.told.append(command)
+            if command.startswith("play track"):
+                self.app = {"state": "playing", "title": "Thunderstruck", "artist": "AC/DC"}
+        with mock.patch("spotify._tell", app_hears):
+            reply = music_tools.play_music("gym", "playlist", shuffle=False)
+        self.assertEqual(reply, "Playing Gym, in order.")
+        self.assertIn("/me/player/play", [path for _, path, _, _ in self.sent])         # servers tried first
+        self.assertEqual(self.told, ['play track "spotify:playlist:gym1"'])
+
+    def test_never_says_playing_when_nothing_plays(self):
+        self.app = {"state": "stopped"}                  # neither the servers' play nor AppleScript's works
+        reply = music_tools.play_music("Get Lucky", "song")
+        self.assertIn("nothing started playing", reply)
+        self.assertEqual(self.popups, [])
+
+    def test_playing_elsewhere_is_checked_with_the_servers(self):   # app closed, e.g. an Echo Dot
+        self.answers["/me/player"] = {"is_playing": False}
+        self.assertIn("nothing started playing", music_tools.play_music("Get Lucky", "song"))
+
+    def test_the_old_song_still_playing_does_not_count(self):
+        self.app = {"state": "playing", "title": "Imagine", "artist": "John Lennon"}   # play was ignored
+        reply = music_tools.play_music("Get Lucky", "song")
+        self.assertIn("nothing started playing", reply)
 
     def test_says_when_nothing_is_found(self):
         self.assertIn("Couldn't find", music_tools.play_music("asdfgh", "song"))

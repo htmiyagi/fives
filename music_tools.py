@@ -42,6 +42,8 @@ KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "pla
 RECOVER_PAGE = "spotify.com/account/recover-playlists"     # where deleted playlists can be brought back (90 days)
 MATCH_CUTOFF = 0.6          # how close a playlist name has to be (0 = anything, 1 = exact) to count as a match
 SETTLE_SECONDS = 0.4         # after a skip, the app needs a moment before it reports the new song
+CHECK_TRIES = 6              # after pressing play, look this many times to see if music really started...
+CHECK_EVERY = 0.25           # ...this many seconds apart (so we wait at most ~1.5s)
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
@@ -236,7 +238,9 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
             return f"Couldn't find a {kind} called '{what}' on Spotify."
         if shuffle is None and kind != "song":           # you didn't say: use your PLAY ORDER setting
             shuffle = ORDERS.get(settings.get("play_order"))
-        _on_a_device(lambda device_id: _start(item, shuffle, device_id))
+        if not _press_play(item, shuffle):
+            return (f"Spotify said yes to {_describe(item)}, but nothing started playing. "
+                    "Try pressing play in the Spotify app, then ask me again.")
     except SpotifyError as err:
         return _explain(err)
     order = {True: ", shuffled", False: ", in order", None: ""}[shuffle]
@@ -251,6 +255,49 @@ def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
     # A song is played by itself; an album / artist / playlist is played as a "context" (the whole thing)
     body = {"uris": [item["uri"]]} if item.get("type") == "track" else {"context_uri": item["uri"]}
     spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
+
+
+def _wait_for(check) -> bool:
+    """Look a few times, a moment apart, until check() is True. False if it never was."""
+    for attempt in range(CHECK_TRIES):
+        if check():
+            return True
+        if attempt < CHECK_TRIES - 1:
+            time.sleep(CHECK_EVERY)
+    return False
+
+
+def _started(item: dict, before: dict) -> bool:
+    """Is what we asked for really playing? Spotify's servers sometimes say "OK!" and the app never starts
+    (seen when the app was stopped with nothing loaded), so we check instead of trusting the "OK"."""
+    if not spotify.is_running():                        # playing somewhere else (like an Echo Dot): ask the servers
+        return bool((spotify_connect.get("/me/player") or {}).get("is_playing"))
+    now = spotify.status()
+    if now.get("state") != "playing":
+        return False
+    if item.get("type") == "track":                     # a song: it has to be THAT song
+        return now.get("title") == item.get("name")
+    return before.get("state") != "playing" or now.get("title") != before.get("title")   # a playlist: it changed
+
+
+def _press_play(item: dict, shuffle: bool | None) -> bool:
+    """Start the music, and make sure it really started. True if it's playing.
+
+    Songs go straight to the Spotify app on this Mac (AppleScript): the servers' "play this one song" says OK but
+    STOPS the music (tested Nov 2026, every time). Playlists, albums and artists go through the servers, which
+    start on a properly shuffled song; if that doesn't take, the app gets pressed directly."""
+    if item.get("type") == "track" and spotify.is_running():
+        return _play_in_app(item)
+    before = spotify.status() if spotify.is_running() else {}
+    _on_a_device(lambda device_id: _start(item, shuffle, device_id))
+    return _wait_for(lambda: _started(item, before)) or _play_in_app(item)
+
+
+def _play_in_app(item: dict) -> bool:
+    """Press play in the Spotify app directly (AppleScript), then check it's really playing."""
+    if not spotify.is_running() or not spotify.play_uri(item.get("uri", "")):
+        return False
+    return _wait_for(lambda: _started(item, {}))          # {} = for a playlist, "playing at all" is enough now
 
 
 @never_crash
