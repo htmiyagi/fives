@@ -283,6 +283,12 @@ class AppControlTests(FakeSpotify):
         self.assertEqual(self.told, ["set player position to 0.0"])
         self.assertEqual(reply, "Started over: The Most Beautiful Thing by Bruno Major.")
 
+    def test_rewind_means_restart_not_previous(self):   # the model passes the user's word; code translates it
+        self.app = dict(self.BRUNO, state="playing")
+        reply = music_tools.music_controls("rewind")
+        self.assertEqual(self.told, ["set player position to 0.0"])
+        self.assertEqual(reply, "Started over: The Most Beautiful Thing by Bruno Major.")
+
     def test_skip_reports_the_new_song(self):
         self.app = dict(self.BRUNO, state="playing")
         def next_song(command):

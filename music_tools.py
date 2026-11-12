@@ -37,6 +37,8 @@ POPUP_SAID = {"pause": "PAUSED", "resume": "RESUMED", "skip": "SKIPPED TO", "pre
               "restart": "STARTED OVER"}
 CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to",
                  "restart": "Started over:"}
+# The model may pass the user's own word; we translate it. Copying "rewind" is easier for it than mapping it.
+ACTION_ALIASES = {"rewind": "restart", "start over": "restart"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
@@ -427,12 +429,13 @@ def music_controls(action: str) -> str:
     replies in the chat don't count, and saying it without calling it does nothing.
 
     Args:
-        action: One of "pause", "resume", "skip", "previous" (the song before this one), or "restart" (this song
-            from the beginning). Use "resume" for "play" / "play the song" when the user didn't name anything.
-            "Rewind", "start over", and "from the top" mean "restart", NOT "previous". Use "previous" only for
-            "back", "last song", or "previous song".
+        action: One of "pause", "resume", "skip", "previous" (the song before this one), "restart" (this song
+            from the beginning), or "rewind" (same as restart). Use "resume" for "play" / "play the song" when the
+            user didn't name anything. If the user says "rewind", pass "rewind". Use "previous" only for "back",
+            "last song", or "previous song".
     """
     action = action.lower().strip()
+    action = ACTION_ALIASES.get(action, action)    # "rewind" -> "restart"
     if action not in CONTROLS:
         return f"I can pause, resume, skip, go back, or start over, not '{action}'."
     status = spotify.status()
