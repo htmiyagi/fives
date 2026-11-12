@@ -20,6 +20,7 @@ import re
 import functools
 import subprocess
 import time
+import unicodedata
 
 import confirm_box
 import indicator
@@ -50,18 +51,55 @@ ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
 WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
 ENOUGH_WORDS = 0.75         # at least 3/4 of the words you said must appear in the song Spotify found
 ORDERS = {"Shuffle": True, "In order": False, "As is": None}    # PLAY ORDER setting -> shuffle
+SEARCH_LIMIT = 10           # results to choose from (Spotify's most since 2026)
+COVER_WORDS = ("karaoke", "in the style of", "originally performed", "made famous", "tribute",
+               "instrumental", "cover", "melody karaoke")          # signs of a copy, not the real song
 FILLER_WORDS = {"my", "mine", "the", "a", "an", "playlist", "playlists", "called", "named"}   # not part of a name
 
 
 # ---- helpers (not tools) ------------------------------------------------------------------------------
-def _search(what: str, kind: str) -> dict | None:
-    """The first search result for `what`, or None. kind is song / album / artist / playlist."""
+def _search(what: str, kind: str, artist: str = "") -> dict | None:
+    """The best search result for `what` (by `artist`, if given), or None. kind is song / album / artist / playlist.
+
+    Not just Spotify's #1: karaoke and "in the style of" copies are skipped (unless you asked for one), and if you
+    named an artist, it has to be by them. (Spotify's own "artist:" filter stopped working in 2026, so the artist
+    goes in as plain words and we check the results ourselves.)"""
     spotify_type = KINDS[kind]
-    # For now we just take the FIRST result. (Later: maybe ask "did you mean...?" when results are close.)
-    found = spotify_connect.get("/search", q=what, type=spotify_type, limit=1)
+    query = f"{what} {artist}".strip()
+    found = spotify_connect.get("/search", q=query, type=spotify_type, limit=SEARCH_LIMIT)
     items = found.get(spotify_type + "s", {}).get("items") or []
-    items = [item for item in items if item]           # Spotify sometimes puts empty spots in the list
-    return items[0] if items else None
+    return best_result([item for item in items if item], what, artist)   # Spotify sometimes leaves empty spots
+
+
+def best_result(items: list[dict], what: str, artist: str = "") -> dict | None:
+    """Pick from search results (in Spotify's order). None if nothing fits."""
+    real = [item for item in items if not is_a_copy(item, what)] or items     # all copies? then copies it is
+    if not artist:
+        return real[0] if real else None
+    by_them = [item for item in real if by_artist(item, artist)]
+    return by_them[0] if by_them else (real[0] if real else None)   # none by them: the tools SAY so (see _instead)
+
+
+def is_a_copy(item: dict, what: str) -> bool:
+    """A karaoke / cover / "in the style of" version? (Unless that's what you asked for: "karaoke get lucky".)"""
+    names = " ".join([item.get("name", "")] + [a.get("name", "") for a in item.get("artists") or []]).lower()
+    return any(word in names and word not in what.lower() for word in COVER_WORDS)
+
+
+def _plain(text: str) -> str:
+    """'JAŸ-Z' -> 'jayz': no accents, capitals, spaces or symbols, so names compare fairly."""
+    no_accents = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]", "", no_accents.lower()) or text.lower().strip()    # (Japanese names stay as is)
+
+
+def by_artist(item: dict, artist: str) -> bool:
+    """Is this by that artist? 'kanye' matches 'Kanye West', 'hiroshi kitadani' matches 'Hiroshi Kitadani'."""
+    wanted = _plain(artist)
+    for name in [a.get("name", "") for a in item.get("artists") or []]:
+        have = _plain(name)
+        if wanted in have or have in wanted or difflib.SequenceMatcher(None, wanted, have).ratio() >= WORD_CUTOFF:
+            return True
+    return False
 
 
 def _my_playlists() -> list[dict]:
@@ -215,12 +253,15 @@ def never_crash(fn):
 
 
 @never_crash
-def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine: bool = False) -> str:
+def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine: bool = False,
+               artist: str = "") -> str:
     """Play music on Spotify: a song, album, artist, or playlist. Your own playlists are checked first.
 
     Args:
-        what: What to play, for example "Get Lucky", "Daft Punk", or "gym".
+        what: What to play, without the artist, for example "Get Lucky", "Stand By Me", "Daft Punk", or "gym".
         kind: One of "song", "album", "artist", or "playlist".
+        artist: Who it's by, ONLY if the user said an artist ("play USS!! by Hiroshi Kitadani" -> "Hiroshi Kitadani").
+            Leave it empty otherwise, even if you think you know who sings it.
         shuffle: True to shuffle, False to play in order. Leave it out unless the user said which.
         mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
     """
@@ -233,9 +274,9 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
         item, everything = _find_my_playlist(what) if kind == "playlist" else (None, [])
         if kind == "playlist" and not item and (mine or says_mine(what)):   # "my" never plays a stranger's playlist
             return f"No playlist called '{without_filler(what)}' in your library. Yours: {_list_names(everything)}."
-        item = item or _search(what, kind)
+        item = item or _search(what, kind, artist if kind in ("song", "album") else "")
         if not item:
-            return f"Couldn't find a {kind} called '{what}' on Spotify."
+            return f"Couldn't find a {kind} called '{what}'{_by(artist)} on Spotify."
         if shuffle is None and kind != "song":           # you didn't say: use your PLAY ORDER setting
             shuffle = ORDERS.get(settings.get("play_order"))
         if not _press_play(item, shuffle):
@@ -245,7 +286,8 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
         return _explain(err)
     order = {True: ", shuffled", False: ", in order", None: ""}[shuffle]
     indicator.show(f"{'SHUFFLING' if shuffle else 'PLAYING'} {kind}", item.get("name", what))
-    return f"Playing {_describe(item)}{order}."
+    instead = _instead(item, artist) if kind in ("song", "album") else ""
+    return f"{instead}{'p' if instead else 'P'}laying {_describe(item)}{order}{' instead' if instead else ''}."
 
 
 def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
@@ -255,6 +297,19 @@ def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
     # A song is played by itself; an album / artist / playlist is played as a "context" (the whole thing)
     body = {"uris": [item["uri"]]} if item.get("type") == "track" else {"context_uri": item["uri"]}
     spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
+
+
+def _instead(item: dict, artist: str) -> str:
+    """'No version by Taylor Swift, so ' when the pick isn't by the artist asked for (else nothing). Rex sometimes
+    fills in an artist on its own, so a wrong guess shouldn't block the song, but you should hear about it."""
+    if not artist.strip() or by_artist(item, artist):
+        return ""
+    return f"No version by {artist}, so "
+
+
+def _by(artist: str) -> str:
+    """' by Daft Punk' (or nothing), for sentences."""
+    return f" by {artist}" if artist.strip() else ""
 
 
 def _wait_for(check) -> bool:
@@ -301,23 +356,25 @@ def _play_in_app(item: dict) -> bool:
 
 
 @never_crash
-def queue_song(what: str) -> str:
+def queue_song(what: str, artist: str = "") -> str:
     """Add a song to the end of the Spotify queue (it plays after the current songs).
 
     Args:
-        what: The song, for example "Get Lucky" or "Get Lucky by Daft Punk".
+        what: The song, without the artist, for example "Get Lucky".
+        artist: Who it's by, ONLY if the user said an artist, for example "Daft Punk". Otherwise leave it empty.
     """
     if not spotify_connect.connected():
         return NOT_CONNECTED
     try:
-        song = _search(what, "song")
+        song = _search(what, "song", artist)
         if not song:
-            return f"Couldn't find a song called '{what}' on Spotify."
+            return f"Couldn't find a song called '{what}'{_by(artist)} on Spotify."
         _on_a_device(lambda device_id: spotify_connect.call(
             "POST", "/me/player/queue", **_with_device({"uri": song["uri"]}, device_id)))
     except SpotifyError as err:
         return _explain(err)
-    return f"Added {_describe(song)} to the queue."
+    instead = _instead(song, artist)
+    return f"{instead}{'a' if instead else 'A'}dded {_describe(song)} to the queue{' instead' if instead else ''}."
 
 
 @never_crash
