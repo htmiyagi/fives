@@ -93,7 +93,9 @@ def disconnect() -> None:
 
 # ---- talking to Spotify ----------------------------------------------------------------------------
 class SpotifyError(Exception):
-    pass
+    def __init__(self, message: str, status: int = 0):
+        super().__init__(message)
+        self.status = status                         # Spotify's HTTP code (404, 403, ...), 0 if we never got one
 
 
 def _post_token(fields: dict) -> dict:
@@ -137,16 +139,27 @@ def token() -> str:
 
 def get(path: str, **params) -> dict:
     """Ask Spotify's Web API a question, for example get("/search", q="daft punk", type="track", limit=1)."""
+    return call("GET", path, **params)
+
+
+def call(method: str, path: str, body: dict | None = None, **params) -> dict:
+    """Tell Spotify's Web API to DO something. method is "PUT" or "POST" (or "GET"), body is sent as JSON.
+    For example call("PUT", "/me/player/shuffle", state="true")."""
     url = API + path + ("?" + urllib.parse.urlencode(params) if params else "")
-    req = urllib.request.Request(url, headers={"Authorization": "Bearer " + token()})
+    headers = {"Authorization": "Bearer " + token(), "Content-Type": "application/json"}
+    data = json.dumps(body).encode() if body is not None else (b"" if method != "GET" else None)
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=15) as reply:
             text = reply.read()
-            return json.loads(text) if text else {}
     except urllib.error.HTTPError as err:
-        raise SpotifyError(f"Spotify said no to {path} ({err.code})")
+        raise SpotifyError(f"Spotify said no to {path} ({err.code})", err.code)
     except OSError as err:
         raise SpotifyError(f"couldn't reach Spotify ({err})")
+    try:
+        return json.loads(text) if text else {}
+    except ValueError:                               # some "done!" answers aren't JSON (the queue sends plain text)
+        return {}
 
 
 # ---- the sign-in (PKCE) ------------------------------------------------------------------------------

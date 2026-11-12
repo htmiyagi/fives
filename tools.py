@@ -94,3 +94,12 @@ def study_mode() -> str:
     """Set up the Mac for focused studying: opens Notes and Safari, lowers the volume."""
     steps = [open_app("Notes"), open_app("Safari"), set_volume(20)]
     return " ".join(steps)
+
+
+# ---------------------------------------------------------------------------
+# Music (Spotify Premium). The code lives in music_tools.py; this just puts it on the menu.
+# ---------------------------------------------------------------------------
+from music_tools import add_to_playlist, make_playlist, now_playing, play_music, queue_song  # noqa: E402
+
+for music_tool in (play_music, queue_song, now_playing, make_playlist, add_to_playlist):
+    tool(music_tool)
