@@ -33,6 +33,7 @@ from pathlib import Path
 import cv2
 import mediapipe as mp
 
+import actions
 import config
 import eyes_link
 import gestures as g
@@ -330,6 +331,10 @@ def lock_window_shape(title: str, w: int, h: int) -> bool:
     return False
 
 
+# The short HUD message after a flick, per action.
+FLICK_FLASH = {"hide_music": "MUSIC HIDDEN", "show_music": "MUSIC SHOWN", "put_away_sketch": "SKETCH PUT AWAY"}
+
+
 class PanelLink:
     """Starts a FIVES window (panel.py, sketch.py) as its own little program and sends it one-word commands.
     With listen=True the window talks back: "closed", and "frame x y w h" / "hidden" so we know where it is
@@ -625,6 +630,8 @@ def main() -> None:
     panel = PanelLink() if config.PANEL else None
     sketch = PanelLink("sketch.py", hidden=True, listen=True) if use_sketch else None
     sketch_snap_sent = None       # the last snap-pen state we told the sketch window about
+    actions.connect_window("music", panel)       # so actions like hide_music can reach these windows
+    actions.connect_window("sketch", sketch)
     panel_key = None
     if panel is not None and getattr(config, "PANEL_HOTKEY", None):
         panel_key = hotkey.HotkeyWatcher(config.PANEL_HOTKEY)
@@ -797,7 +804,7 @@ def main() -> None:
             hud_points = hud_aim = hud_gap = None     # what the HUD shows this frame
             hud_state, hud_progress = "", 0.0
             if panel_key is not None and panel_key.consume_tap():
-                panel.send("toggle")
+                actions.run("toggle_music")
             if sketch is not None and (sketch.closed.is_set() or swiped_sketch):   # CLOSE pressed, or swiped away
                 sketch.closed.clear()
                 swiped_sketch = False
@@ -872,18 +879,12 @@ def main() -> None:
                         flick.last_best = 0.0
                     palm_flat = flick.is_open and config.FLICK_FREEZE_CURSOR
                     if direction:
-                        target = window_under(last_sent)
-                        if target is sketch and sketch is not None:     # pointing at the sketch window: swipe it away
-                            sketch.send("hide")
-                            sketch.frame = None
-                            swiped_sketch = True
-                            flash_text, flash_until = "SKETCH PUT AWAY", time.monotonic() + 1.0
-                            print(f"flick {direction}: sketch window put away")
-                        else:
-                            hide = direction == config.FLICK_HIDE
-                            panel.send("hide" if hide else "show")
-                            flash_text, flash_until = ("MUSIC HIDDEN" if hide else "MUSIC SHOWN"), time.monotonic() + 1.0
-                            print(f"flick {direction}: music window {'hidden' if hide else 'shown'}")
+                        on = "sketch" if sketch is not None and window_under(last_sent) is sketch else None
+                        name = actions.action_for(f"flick_{direction}", on)     # the GESTURES table in actions.py
+                        if name:
+                            print(f"flick {direction}: {actions.run(name)}")
+                            swiped_sketch = swiped_sketch or name == "put_away_sketch"   # leave draw mode too
+                            flash_text, flash_until = FLICK_FLASH.get(name, ""), time.monotonic() + 1.0
                 gripping = False
                 grip_on = grip_pen is not None and ((sketch.pen_mode or config.DRAW_PEN) if sketch is not None
                                                     else config.DRAW_PEN) == "grip"
@@ -1150,7 +1151,7 @@ def main() -> None:
             if key == ord("q"):
                 break
             if key == ord("m") and panel is not None:
-                panel.send("toggle")
+                actions.run("toggle_music")
             if key == ord("h") and hud is not None:
                 print("view:", "camera" if hud.toggle() == "cam" else "hand only")
             if key == ord("t") and hud is not None:
