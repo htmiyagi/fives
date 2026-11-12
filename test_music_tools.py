@@ -26,6 +26,7 @@ class FakeSpotify(unittest.TestCase):
 
     def setUp(self):
         self.sent = []                                   # every (method, path, body, params) the tools sent
+        self.searched = []                               # every GET path the tools asked for
         self.answers = {"/me/playlists": {"items": [GYM, CHILL], "next": None}}
         self.songs = {"get lucky": GET_LUCKY}            # what the fake search can find
         self.fail_next_play_with = None                  # set to 404 to pretend no device is awake
@@ -35,6 +36,7 @@ class FakeSpotify(unittest.TestCase):
             self.addCleanup(patcher.stop)
 
     def fake_get(self, path, **params):
+        self.searched.append(path)                       # every GET path, so tests can check what was looked up
         if path == "/search":
             song = self.songs.get(params["q"].lower())
             return {"tracks": {"items": [song] if song else []}}
@@ -73,6 +75,25 @@ class PlayMusicTests(FakeSpotify):
             reply = music_tools.play_music("Get Lucky")
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
         self.assertEqual(self.sent[-1][3], {"device_id": "mac"})
+
+    def test_my_playlist_with_filler_words_plays_yours(self):
+        reply = music_tools.play_music("my gym playlist", "playlist", shuffle=True)
+        self.assertEqual(reply, "Playing Gym, shuffled.")
+
+    def test_my_never_falls_back_to_a_strangers_playlist(self):
+        reply = music_tools.play_music("my road trip playlist", "playlist")
+        self.assertEqual(reply, "No playlist called 'road trip' in your library. Yours: Gym, Chill Vibes.")
+        self.assertFalse(any(path == "/search" for path in self.searched), "it searched all of Spotify")
+        self.assertEqual(self.sent, [])                          # nothing was played
+
+    def test_mine_checkbox_works_even_when_rex_drops_the_word_my(self):   # Rex really did drop it in testing
+        reply = music_tools.play_music("road trip playlist", "playlist", mine=True)
+        self.assertIn("in your library", reply)
+        self.assertNotIn("/search", self.searched)
+
+    def test_without_my_it_can_search_all_of_spotify(self):
+        music_tools.play_music("a road trip playlist", "playlist")
+        self.assertIn("/search", self.searched)
 
     def test_says_when_nothing_is_found(self):
         self.assertIn("Couldn't find", music_tools.play_music("asdfgh", "song"))
@@ -212,6 +233,18 @@ class NameMatchTests(unittest.TestCase):
         self.assertEqual(music_tools.best_name_match("vibes", names), "Chill Vibes 🌙")  # inside the name
         self.assertEqual(music_tools.best_name_match("gim", names), "Gym")             # a typo
         self.assertIsNone(music_tools.best_name_match("road trip", names))             # nothing close
+
+    def test_filler_words_are_ignored(self):                     # the bug Rex's timing test found
+        names = ["Gym", "Chill Songs", "My Playlist #1"]
+        self.assertEqual(music_tools.best_name_match("gym playlist", names), "Gym")
+        self.assertEqual(music_tools.best_name_match("my gym playlist", names), "Gym")
+        self.assertEqual(music_tools.best_name_match("the chill playlist", names), "Chill Songs")
+        self.assertEqual(music_tools.best_name_match("my playlist #1", names), "My Playlist #1")  # a real name
+
+    def test_says_mine(self):
+        self.assertTrue(music_tools.says_mine("My gym playlist"))
+        self.assertFalse(music_tools.says_mine("a gym playlist"))
+        self.assertFalse(music_tools.says_mine("Mystery Mix"))   # "my" inside a word doesn't count
 
 
 if __name__ == "__main__":

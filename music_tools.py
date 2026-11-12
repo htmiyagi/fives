@@ -35,6 +35,7 @@ MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spoti
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
 WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
 ENOUGH_WORDS = 0.75         # at least 3/4 of the words you said must appear in the song Spotify found
+FILLER_WORDS = {"my", "mine", "the", "a", "an", "playlist", "playlists", "called", "named"}   # not part of a name
 
 
 # ---- helpers (not tools) ------------------------------------------------------------------------------
@@ -60,12 +61,27 @@ def _my_playlists() -> list[dict]:
     return playlists
 
 
+def without_filler(text: str) -> str:
+    """'my gym playlist' -> 'gym'. Drops words people say AROUND a name that aren't part of it.
+    If that leaves nothing ("my playlist"), keep what was said."""
+    kept = [word for word in text.split() if word.lower().strip(".,!?'\"") not in FILLER_WORDS]
+    return " ".join(kept) or text
+
+
+def says_mine(text: str) -> bool:
+    """Did they say 'my' / 'mine'? Then they mean a playlist in their library, never a stranger's."""
+    return any(word in ("my", "mine") for word in _words(text))
+
+
 def best_name_match(wanted: str, names: list[str]) -> str | None:
     """Pick the name that best matches what was said, or None if nothing is close enough.
 
-    "chill" finds "Chill Vibes 🌙" (it's inside the name), and "chil" finds "Chill" (only one letter off)."""
-    wanted = wanted.lower().strip()
+    "chill" finds "Chill Vibes 🌙" (it's inside the name), "chil" finds "Chill" (only one letter off),
+    and "my gym playlist" finds "Gym" (filler words dropped)."""
     lowered = {name.lower().strip(): name for name in names}
+    if wanted.lower().strip() in lowered:               # a name that really is "My Playlist #1"
+        return lowered[wanted.lower().strip()]
+    wanted = without_filler(wanted).lower().strip()
     if wanted in lowered:                               # exact (ignoring capitals)
         return lowered[wanted]
     inside = [name for low, name in lowered.items() if wanted and wanted in low]
@@ -171,13 +187,14 @@ def never_crash(fn):
 
 
 @never_crash
-def play_music(what: str, kind: str = "song", shuffle: bool | None = None) -> str:
+def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine: bool = False) -> str:
     """Play music on Spotify: a song, album, artist, or playlist. Your own playlists are checked first.
 
     Args:
-        what: What to play, for example "Get Lucky", "Daft Punk", or "my gym playlist".
+        what: What to play, for example "Get Lucky", "Daft Punk", or "gym".
         kind: One of "song", "album", "artist", or "playlist".
         shuffle: True to shuffle, False to play in order. Leave it out to keep Spotify's current setting.
+        mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
     """
     if not spotify_connect.connected():
         return NOT_CONNECTED
@@ -185,7 +202,9 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None) -> st
     if kind not in KINDS:
         return f"I can play a song, album, artist, or playlist, not a '{kind}'."
     try:
-        item = _find_my_playlist(what)[0] if kind == "playlist" else None
+        item, everything = _find_my_playlist(what) if kind == "playlist" else (None, [])
+        if kind == "playlist" and not item and (mine or says_mine(what)):   # "my" never plays a stranger's playlist
+            return f"No playlist called '{without_filler(what)}' in your library. Yours: {_list_names(everything)}."
         item = item or _search(what, kind)
         if not item:
             return f"Couldn't find a {kind} called '{what}' on Spotify."
