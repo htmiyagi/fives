@@ -336,6 +336,21 @@ def lock_window_shape(title: str, w: int, h: int) -> bool:
 FLICK_FLASH = {"open_wheel": "WHEEL", "close_wheel": "WHEEL CLOSED", "put_away_sketch": "SKETCH PUT AWAY"}
 
 
+class HubTab:
+    """One of the FIVES window's tabs (brain, eyes, settings), dressed up as a window so actions can open it.
+    "show" asks hub.py (through the shared memory) to switch to this tab and come to the front."""
+
+    def __init__(self, hub, tab):
+        self.hub, self.tab = hub, tab
+
+    def send(self, word: str) -> None:
+        if word in ("show", "toggle"):              # hiding a tab means nothing: the FIVES window stays
+            self.hub.ask_tab(self.tab)
+
+
+HUB_TABS = ("brain", "eyes", "settings")            # wheel wedges that are tabs in hub.py, not windows of their own
+
+
 class PanelLink:
     """Starts a FIVES window (panel.py, sketch.py) as its own little program and sends it one-word commands.
     With listen=True the window talks back: "closed", and "frame x y w h" / "hidden" so we know where it is
@@ -672,6 +687,8 @@ def main() -> None:
                        config.HUD_SCALE, config.HUD_STRENGTH, config.HUD_DENOISE) if config.HUD else None)
     window = f"{config.NAME} eyes"
     in_hub = eyes_link.sender()       # set when the FIVES window (hub.py) started us: IT shows the picture (EYES tab)
+    for tab in HUB_TABS:              # so the wheel's BRAIN / EYES / SETTINGS wedges can switch the FIVES window's tab
+        actions.connect_window(tab, HubTab(in_hub, tab) if in_hub is not None else None)
     if hud is not None and in_hub is None:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, *hud.size)       # shown at layout size; drawn at HUD_SCALE x for sharpness

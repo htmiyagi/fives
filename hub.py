@@ -840,6 +840,17 @@ def hit(p):
     return None
 
 
+def show_tab(name):
+    """Switch to a tab and bring the FIVES window to the front (a wheel wedge asked for it, through eyes.py)."""
+    if name not in TABS:
+        return
+    S.tab, S.dirty = name, True
+    if win.isMiniaturized():
+        win.deminiaturize_(None)
+    win.makeKeyAndOrderFront_(None)
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)
+
+
 def press(name):
     if name.startswith("tab:"):
         S.tab = name[4:]
@@ -1004,6 +1015,9 @@ class Ticker(NSObject):
         # we want pictures while the EYES tab is showing (and until the first one arrives, to know eyes.py is up)
         watching = seen and eyes_running() and (S.tab == "eyes" or S.frame is None)
         link.watch(watching)
+        asked = link.tab_request()          # a BRAIN / EYES / SETTINGS wedge was clicked on the wheel
+        if asked:
+            show_tab(asked)
         redraw = S.dirty
         data = link.newest() if watching else None
         if data is not None:
