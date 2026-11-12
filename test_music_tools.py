@@ -86,6 +86,11 @@ class PlayMusicTests(FakeSpotify):
         self.assertFalse(any(path == "/search" for path in self.searched), "it searched all of Spotify")
         self.assertEqual(self.sent, [])                          # nothing was played
 
+    def test_mine_checkbox_works_even_when_rex_drops_the_word_my(self):   # Rex really did drop it in testing
+        reply = music_tools.play_music("gym playlist", "playlist", mine=True)
+        self.assertIn("in your library", reply)
+        self.assertNotIn("/search", self.searched)
+
     def test_without_my_it_can_search_all_of_spotify(self):
         music_tools.play_music("a road trip playlist", "playlist")
         self.assertIn("/search", self.searched)

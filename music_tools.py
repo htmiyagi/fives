@@ -187,14 +187,14 @@ def never_crash(fn):
 
 
 @never_crash
-def play_music(what: str, kind: str = "song", shuffle: bool | None = None) -> str:
+def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine: bool = False) -> str:
     """Play music on Spotify: a song, album, artist, or playlist. Your own playlists are checked first.
 
     Args:
-        what: What to play, in the user's own words, for example "Get Lucky", "Daft Punk", or "my gym playlist".
-            Keep "my" if they said it: it means their own playlist, not one from all of Spotify.
+        what: What to play, for example "Get Lucky", "Daft Punk", or "gym".
         kind: One of "song", "album", "artist", or "playlist".
         shuffle: True to shuffle, False to play in order. Leave it out to keep Spotify's current setting.
+        mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
     """
     if not spotify_connect.connected():
         return NOT_CONNECTED
@@ -203,7 +203,7 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None) -> st
         return f"I can play a song, album, artist, or playlist, not a '{kind}'."
     try:
         item, everything = _find_my_playlist(what) if kind == "playlist" else (None, [])
-        if kind == "playlist" and not item and says_mine(what):     # "my ..." never plays a stranger's playlist
+        if kind == "playlist" and not item and (mine or says_mine(what)):   # "my" never plays a stranger's playlist
             return f"No playlist called '{without_filler(what)}' in your library. Yours: {_list_names(everything)}."
         item = item or _search(what, kind)
         if not item:
