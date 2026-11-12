@@ -10,6 +10,7 @@ The whole trick is one loop:
 import ollama
 
 import config
+from music_tools import playlist_note
 from tools import TOOLS
 
 # Look tools up by name: {"open_app": open_app, ...}
@@ -17,8 +18,10 @@ TOOLS_BY_NAME = {fn.__name__: fn for fn in TOOLS}
 
 
 def new_conversation() -> list:
-    """Start a fresh conversation that begins with FIVES's personality."""
-    return [{"role": "system", "content": config.PERSONALITY}]
+    """Start a fresh conversation: FIVES's personality, plus facts the model can't see (your playlist names).
+    Read once per conversation (~0.25s), not every message, so replies stay fast."""
+    facts = [note for note in (playlist_note(),) if note]
+    return [{"role": "system", "content": "\n\n".join([config.PERSONALITY, *facts])}]
 
 
 def run_tool(name: str, args: dict) -> str:
