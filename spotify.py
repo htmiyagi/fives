@@ -9,6 +9,7 @@ The first time, macOS asks "Terminal wants to control Spotify": click OK.
 Nothing here touches the screen. panel.py draws the window and calls these functions.
 """
 
+import re
 import subprocess
 import time
 
@@ -131,6 +132,15 @@ def set_volume(percent: int) -> None:
 
 def seek(seconds: float) -> None:
     _tell(f"set player position to {max(0.0, float(seconds)):.1f}")
+
+
+def play_uri(uri: str) -> bool:
+    """Play a song / album / playlist / artist by its Spotify ID ("spotify:track:..."), straight in the app.
+    Only real Spotify IDs get through, so nothing else can sneak into the AppleScript. Returns False if refused."""
+    if not re.fullmatch(r"spotify:[a-z]+:[A-Za-z0-9]+", uri or ""):
+        return False
+    _tell(f'play track "{uri}"')
+    return True
 
 
 def restart() -> None:
