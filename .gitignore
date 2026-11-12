@@ -5,3 +5,4 @@ models/
 .DS_Store
 settings.json
 spotify_keys.json
+passcode.json
