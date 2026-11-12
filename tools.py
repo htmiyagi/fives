@@ -136,6 +136,7 @@ def study_mode() -> str:
 
 # ---------------------------------------------------------------------------
 # Music. The code lives in music_tools.py; this just puts it on the menu. (music_controls works without Premium.)
+# actions.py's pause / skip / now_playing etc. call these same functions, so keys and gestures share Rex's code.
 # ---------------------------------------------------------------------------
 from music_tools import (add_to_playlist, delete_playlist, make_playlist, music_controls,  # noqa: E402
                          now_playing, play_music, queue_song)
