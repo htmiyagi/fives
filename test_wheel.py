@@ -147,5 +147,20 @@ class WheelActions(unittest.TestCase):
             self.assertFalse(said.startswith("FIVES has no window"), name)
 
 
+
+class NumberKeys(unittest.TestCase):
+    def test_option_1_is_the_first_wedge(self):
+        self.assertEqual(wl.wedge_for_number(1, ["music", "sketch", "settings"]), "music")
+
+    def test_keys_follow_the_wheel_order(self):
+        self.assertEqual(wl.wedge_for_number(1, ["settings", "music"]), "settings")
+
+    def test_number_past_the_last_wedge_is_nothing(self):
+        self.assertIsNone(wl.wedge_for_number(4, ["music", "sketch", "settings"]))
+
+    def test_zero_is_nothing(self):
+        self.assertIsNone(wl.wedge_for_number(0, ["music", "settings"]))
+
+
 if __name__ == "__main__":
     unittest.main()
