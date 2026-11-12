@@ -31,9 +31,11 @@ from spotify_connect import SpotifyError
 APP_PERMISSION = ("FIVES isn't allowed to control the Spotify app yet: System Settings > Privacy & Security > "
                   "Automation, then turn on Spotify for Terminal.")
 CONTROLS = {"pause": spotify.pause, "resume": spotify.resume, "skip": spotify.next_track,
-            "previous": spotify.previous_track}
-POPUP_SAID = {"pause": "PAUSED", "resume": "RESUMED", "skip": "SKIPPED TO", "previous": "BACK TO"}
-CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to"}
+            "previous": spotify.previous_song, "restart": spotify.restart}
+POPUP_SAID = {"pause": "PAUSED", "resume": "RESUMED", "skip": "SKIPPED TO", "previous": "BACK TO",
+              "restart": "STARTED OVER"}
+CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to",
+                 "restart": "Started over:"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
@@ -309,15 +311,15 @@ def _song(status: dict) -> str:
 
 @never_crash
 def music_controls(action: str) -> str:
-    """Pause, resume, skip, or go back on what's in the Spotify player right now. Works without Premium.
+    """Pause, resume, skip, go back, or start over on what's in the Spotify player right now. Works without Premium.
 
     Args:
-        action: One of "pause", "resume", "skip", or "previous". Use "resume" for "play" / "play the song" when
-            the user didn't name anything to play.
+        action: One of "pause", "resume", "skip", "previous" (the song before this one), or "restart" (this song
+            from the beginning). Use "resume" for "play" / "play the song" when the user didn't name anything.
     """
     action = action.lower().strip()
     if action not in CONTROLS:
-        return f"I can pause, resume, skip, or go back, not '{action}'."
+        return f"I can pause, resume, skip, go back, or start over, not '{action}'."
     status = spotify.status()
     if status.get("state") == "error":
         return APP_PERMISSION

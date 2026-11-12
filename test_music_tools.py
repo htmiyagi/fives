@@ -217,6 +217,18 @@ class AppControlTests(FakeSpotify):
         self.assertIn("Already paused", music_tools.music_controls("pause"))
         self.assertEqual(self.told, [])
 
+    def test_previous_jumps_to_the_start_first_so_it_really_goes_back(self):   # the age-old rewind bug
+        self.app = dict(self.BRUNO, state="playing")
+        with mock.patch("spotify.time.sleep"), mock.patch("music_tools.time.sleep"):
+            music_tools.music_controls("previous")
+        self.assertEqual(self.told, ["set player position to 0.0", "previous track"])
+
+    def test_restart_goes_back_to_the_beginning_of_this_song(self):
+        self.app = dict(self.BRUNO, state="playing")
+        reply = music_tools.music_controls("restart")
+        self.assertEqual(self.told, ["set player position to 0.0"])
+        self.assertEqual(reply, "Started over: The Most Beautiful Thing by Bruno Major.")
+
     def test_skip_reports_the_new_song(self):
         self.app = dict(self.BRUNO, state="playing")
         def next_song(command):
