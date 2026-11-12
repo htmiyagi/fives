@@ -84,6 +84,16 @@ class PlayMusicTests(FakeSpotify):
         self.assertEqual(self.sent[0], ("PUT", "/me/player/shuffle", None, {"state": "true"}))
         self.assertEqual(self.sent[1][2], {"context_uri": "spotify:playlist:chill1"})
 
+    def test_spotify_refusing_shuffle_still_plays_the_playlist(self):   # real bug: it blamed Premium
+        def shuffle_refused(method, path, body=None, **params):
+            if path == "/me/player/shuffle":
+                raise SpotifyError("Restriction violated", 403)
+            return self.fake_call(method, path, body, **params)
+        with mock.patch("spotify_connect.call", shuffle_refused):
+            reply = music_tools.play_music("chil", "playlist", shuffle=True)
+        self.assertEqual(reply, "Playing Chill Vibes, shuffled.")
+        self.assertEqual(self.sent[0][2], {"context_uri": "spotify:playlist:chill1"})   # play was still pressed
+
     def test_in_order_turns_shuffle_off(self):
         music_tools.play_music("gym", "playlist", shuffle=False)
         self.assertEqual(self.sent[0][3], {"state": "false"})

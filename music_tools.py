@@ -293,7 +293,13 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
 def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
     """Set shuffle (if asked), then press play. Shuffle goes first so the very first song is already shuffled."""
     if shuffle is not None:
-        spotify_connect.call("PUT", "/me/player/shuffle", **_with_device({"state": str(shuffle).lower()}, device_id))
+        try:
+            spotify_connect.call("PUT", "/me/player/shuffle", **_with_device({"state": str(shuffle).lower()}, device_id))
+        except SpotifyError as err:
+            # Spotify sometimes refuses shuffle with 403 "Restriction violated" (seen Nov 2026, Premium account).
+            # Shuffle is a nice-to-have, so play anyway. Other errors (like 404 "no device") still count.
+            if err.status != 403:
+                raise
     # A song is played by itself; an album / artist / playlist is played as a "context" (the whole thing)
     body = {"uris": [item["uri"]]} if item.get("type") == "track" else {"context_uri": item["uri"]}
     spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
