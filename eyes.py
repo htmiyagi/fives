@@ -350,9 +350,6 @@ class HubTab:
             self.hub.ask_tab(self.tab)
 
 
-HUB_TABS = ("brain", "eyes", "settings")            # wheel wedges that are tabs in hub.py, not windows of their own
-
-
 class PanelLink:
     """Starts a FIVES window (panel.py, sketch.py) as its own little program and sends it one-word commands.
     With listen=True the window talks back: "closed", and "frame x y w h" / "hidden" so we know where it is
@@ -704,7 +701,7 @@ def main() -> None:
                        config.HUD_SCALE, config.HUD_STRENGTH, config.HUD_DENOISE) if config.HUD else None)
     window = f"{config.NAME} eyes"
     in_hub = eyes_link.sender()       # set when the FIVES window (hub.py) started us: IT shows the picture (EYES tab)
-    for tab in HUB_TABS:              # so the wheel's BRAIN / EYES / SETTINGS wedges can switch the FIVES window's tab
+    for tab in wheel_logic.HUB_TABS:              # so the wheel's BRAIN / EYES / SETTINGS wedges can switch the FIVES window's tab
         actions.connect_window(tab, HubTab(in_hub, tab) if in_hub is not None else None)
     if hud is not None and in_hub is None:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)

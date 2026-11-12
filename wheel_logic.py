@@ -27,6 +27,8 @@ WINDOWS = {
     "settings": "SETTINGS",
 }
 
+HUB_TABS = ("brain", "eyes", "settings")   # these are tabs in the FIVES window (hub.py), not windows of their own
+
 DEFAULT_ORDER = ["music", "sketch", "brain", "eyes", "settings"]   # what FIVES ships with (friends start here)
 MAX_WEDGES = 8                 # more than this makes the wedges too small to hit by hand
 MUST_KEEP = "settings"         # can be moved but never removed (otherwise there's no way back to Settings)
