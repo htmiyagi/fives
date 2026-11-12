@@ -80,8 +80,37 @@ class ConfirmTests(TempPasscodeFile):
         self.assertEqual(box.message, "WRONG PASSCODE. 1 TRY LEFT")
         typed(box, "3333")
         self.assertIs(box.result, False)
+        self.assertEqual(box.message, "TOO MANY WRONG TRIES. LOCKED FOR 1:00")
         typed(box, "4417")                                          # too late: it's already cancelled
         self.assertIs(box.result, False)
+
+    def test_a_new_box_does_not_give_fresh_tries(self):           # the hole Hoyu found
+        passcode.set_passcode("4417")
+        typed(Confirm("?"), "1111")
+        typed(Confirm("?"), "2222")
+        self.assertEqual(Confirm("?").tries_left, 1)
+
+    def test_a_locked_box_shows_the_countdown_and_takes_no_passcode(self):
+        passcode.set_passcode("4417")
+        for guess in ("1111", "2222", "3333"):
+            passcode.attempt(guess)
+        box = Confirm("?")
+        self.assertEqual(box.mode, "locked")
+        self.assertEqual(box.message, "LOCKED. TRY AGAIN IN 1:00")
+        typed(box, "4417")
+        self.assertIsNone(box.result)                               # ignored, not confirmed
+
+    def test_a_locked_box_unlocks_when_the_time_runs_out(self):
+        passcode.set_passcode("4417")
+        for guess in ("1111", "2222", "3333"):
+            passcode.attempt(guess)
+        box = Confirm("?")
+        with mock.patch("passcode._now", lambda: passcode.time.time() + 61):
+            box.refresh()
+            self.assertEqual(box.mode, "enter")
+            typed(box, "4417")
+        self.assertIs(box.result, True)
+
 
     def test_dots_are_cleared_after_each_try(self):
         passcode.set_passcode("4417")
@@ -116,6 +145,50 @@ class ConfirmTests(TempPasscodeFile):
         box.cancel()
         self.assertIs(box.result, False)
 
+
+class LockoutTests(TempPasscodeFile):
+    def setUp(self):
+        super().setUp()
+        self.clock = 1_000_000.0                                    # a pretend clock we can move by hand
+        patcher = mock.patch("passcode._now", lambda: self.clock)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        passcode.set_passcode("4417")
+
+    def miss_three(self):
+        for guess in ("1111", "2222", "3333"):
+            self.assertFalse(passcode.attempt(guess))
+
+    def test_locks_get_longer_then_stay_at_one_hour(self):
+        lengths = []
+        for _ in range(6):
+            self.miss_three()
+            lengths.append(passcode.locked_for())
+            self.clock += 60 * 60                                   # wait out the lock
+        self.assertEqual(lengths, [60, 300, 900, 3600, 3600, 3600])
+
+    def test_even_the_right_passcode_is_refused_while_locked(self):
+        self.miss_three()
+        self.assertFalse(passcode.attempt("4417"))
+        self.clock += 61
+        self.assertTrue(passcode.attempt("4417"))
+
+    def test_the_right_passcode_resets_the_streak(self):
+        self.assertFalse(passcode.attempt("1111"))
+        self.assertFalse(passcode.attempt("2222"))
+        self.assertTrue(passcode.attempt("4417"))
+        self.assertEqual(passcode.tries_left(), 3)
+        self.miss_three()
+        self.assertEqual(passcode.locked_for(), 60)                 # back to the first, shortest lock
+
+    def test_setting_the_clock_back_does_not_unlock_or_stretch_it(self):
+        self.miss_three()
+        self.clock -= 24 * 60 * 60                                  # someone sets the Mac a day back
+        self.assertEqual(passcode.locked_for(), 60)                 # still locked, and never longer than 1:00
+
+    def test_the_saved_file_still_holds_no_passcode(self):
+        self.miss_three()
+        self.assertNotIn("4417", passcode.FILE.read_text())
 
 if __name__ == "__main__":
     unittest.main()

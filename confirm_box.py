@@ -31,7 +31,7 @@ from AppKit import (NSApplication, NSBackingStoreBuffered, NSBezierPath, NSColor
 from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
 
-from confirm_logic import Confirm
+from confirm_logic import Confirm, clock
 
 HERE = Path(__file__).resolve().parent
 
@@ -209,7 +209,7 @@ def draw_words() -> None:
     NSString.stringWithString_("◆  FIVES  ·  CONFIRM").drawAtPoint_withAttributes_(
         (40, 22), attrs(13, SKY, bold=True, kern=3))
     text_in(logic.question, (40, 46, 440, 60), 24, WHITE, bold=True)
-    warning = "WRONG" in logic.message or "SHORT" in logic.message or "MATCH" in logic.message
+    warning = any(word in logic.message for word in ("WRONG", "SHORT", "MATCH", "LOCKED"))
     text_in(logic.message, (40, 112, 440, 22), 14, SKY if warning else PALE, bold=warning)
 
 
@@ -224,6 +224,9 @@ def draw_field() -> None:
     field.stroke()
     NSGraphicsContext.restoreGraphicsState()
     x, y, w, h = FIELD
+    if logic.mode == "locked":                       # locked: the field shows the countdown instead of dots
+        text_in(f"LOCKED   {clock(logic.store.locked_for())}", (x, y + 9, w, h - 9), 22, SKY, bold=True)
+        return
     count = len(logic.typed)
     gap = 22
     start = x + w / 2 - (count - 1) * gap / 2
@@ -236,8 +239,8 @@ def draw_field() -> None:
         caret_x = start + count * gap - (gap / 2 if count else 0)
         color(SKY, 0.9).set()
         NSBezierPath.fillRect_(NSMakeRect(caret_x, y + 11, 2, h - 22))
-    if logic.mode == "enter":                        # tries left, as three small circles
-        for i in range(3):
+    if logic.mode == "enter" and logic.result is None:     # tries left before the next lock, as small circles
+        for i in range(logic.store.TRIES_PER_LOCK):
             filled = i < logic.tries_left
             circle = NSBezierPath.bezierPathWithOvalInRect_(NSMakeRect(x + w - 54 + i * 16, y - 18, 9, 9))
             color(SKY if filled else GREY, 0.95 if filled else 0.35).set()
@@ -248,7 +251,11 @@ def draw_buttons() -> None:
     for name, rect, label in (("cancel", CANCEL, "CANCEL"), ("confirm", CONFIRM, "CONFIRM")):
         shape = cut_shape(rect, 9)
         hot = B.hover == name
-        if name == "confirm":                        # the main button is solid blue
+        if name == "confirm" and B.logic.mode == "locked":     # switched off while locked
+            color(BLUE, 0.18).set()
+            shape.fill()
+            ink = GREY
+        elif name == "confirm":                      # the main button is solid blue
             glowing(14 if hot else 8)
             color(SKY if hot else BLUE).set()
             shape.fill()
@@ -286,6 +293,7 @@ def secure_typing(on: bool) -> None:
 # ---- running ------------------------------------------------------------------------------------------
 class Ticker(NSObject):
     def tick_(self, timer):
+        B.logic.refresh()                            # the lock countdown (and unlocking when it runs out)
         if B.logic.result is None and time.time() - B.started > TIMEOUT_SECONDS:
             B.logic.cancel()
             B.logic.message = "TIMED OUT. CANCELLED"
