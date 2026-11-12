@@ -22,10 +22,13 @@ TOOLS_BY_NAME = {fn.__name__: fn for fn in TOOLS}
 # Instant, can't be misunderstood, and works even when Ollama is off.
 SHORTCUTS = {
     "skip": "skip", "next": "skip", "next song": "skip", "skip song": "skip", "skip this": "skip",
-    "pause": "pause", "stop": "pause",
-    "resume": "resume", "play": "resume", "unpause": "resume",
+    "skip it": "skip", "skip this song": "skip", "next one": "skip",
+    "pause": "pause", "stop": "pause", "pause it": "pause", "pause the music": "pause",
+    "resume": "resume", "play": "resume", "unpause": "resume", "keep playing": "resume",
     "back": "previous", "previous": "previous", "previous song": "previous", "go back": "previous",
-    "restart": "restart",
+    "last song": "previous",
+    "restart": "restart", "rewind": "restart", "rewind to start": "restart", "start over": "restart",
+    "from the top": "restart", "restart song": "restart", "restart the song": "restart",
 }
 POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip please" counts as "skip"
 
@@ -33,7 +36,8 @@ POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip pl
 def shortcut_action(user_text: str) -> str | None:
     """'Skip!' -> 'skip'. Returns None for anything that isn't a plain one-word-ish command."""
     no_punctuation = user_text.lower().translate(str.maketrans("", "", string.punctuation))
-    words = [word for word in no_punctuation.split() if word not in POLITE_WORDS]
+    words = [word for word in no_punctuation.split()
+             if word not in POLITE_WORDS and len(word) > 1]   # 1 letter = leftover of a smiley like :D or :P
     return SHORTCUTS.get(" ".join(words))
 
 
@@ -55,17 +59,28 @@ def run_tool(name: str, args: dict) -> str:
         return f"The tool {name} failed: {error}"
 
 
+def run_shortcut(messages: list, action: str, on_tool=None) -> str:
+    """Run music_controls ourselves, then write it into the history the same way a real turn looks:
+    the model calls the tool -> the tool answers -> the model replies. If we only saved the reply, the model
+    would learn "just say 'Skipped!', no tool needed" and start faking it (it really did, in testing)."""
+    args = {"action": action}
+    result = run_tool("music_controls", args)
+    if on_tool:
+        on_tool("music_controls", args, result)
+    messages.append({"role": "assistant", "content": "",
+                     "tool_calls": [{"function": {"name": "music_controls", "arguments": args}}]})
+    messages.append({"role": "tool", "tool_name": "music_controls", "content": result})
+    messages.append({"role": "assistant", "content": result})
+    return result
+
+
 def think(messages: list, user_text: str, on_tool=None) -> str:
     """Handle one request. Adds everything to `messages` and returns the reply."""
     messages.append({"role": "user", "content": user_text})
 
     action = shortcut_action(user_text)
     if action:                             # a plain "skip" etc: no model needed
-        result = run_tool("music_controls", {"action": action})
-        if on_tool:
-            on_tool("music_controls", {"action": action}, result)
-        messages.append({"role": "assistant", "content": result})   # so Rex remembers what happened
-        return result
+        return run_shortcut(messages, action, on_tool)
 
     for _ in range(config.MAX_TOOL_ROUNDS):
         response = ollama.chat(

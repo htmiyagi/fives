@@ -26,6 +26,10 @@ class ShortcutWords(unittest.TestCase):
         self.assertEqual(brain.shortcut_action("  next song, please "), "skip")
         self.assertEqual(brain.shortcut_action("Rex, pause."), "pause")
 
+    def test_phrases_rex_faked_in_testing_are_shortcuts(self):   # these reached the model and it made up a reply
+        self.assertEqual(brain.shortcut_action("skip it"), "skip")
+        self.assertEqual(brain.shortcut_action("rewind to start!! :D"), "restart")
+
     def test_longer_requests_still_go_to_the_model(self):
         self.assertIsNone(brain.shortcut_action("skip this and play Radiohead"))
         self.assertIsNone(brain.shortcut_action("play Get Lucky"))
@@ -52,11 +56,13 @@ class ShortcutsSkipTheModel(unittest.TestCase):
         self.assertEqual(self.ran, [("music_controls", {"action": "skip"})])
         self.assertEqual(reply, "Skipped. Now playing Get Lucky by Daft Punk.")
 
-    def test_shortcut_is_remembered_in_the_conversation(self):   # so "go back to that one" still makes sense
+    def test_shortcut_is_remembered_as_a_real_tool_call(self):   # else Rex learns to fake it
         messages = []
         brain.think(messages, "skip")
-        self.assertEqual([m["role"] for m in messages], ["user", "assistant"])
-        self.assertIn("Get Lucky", messages[-1]["content"])
+        self.assertEqual([m["role"] for m in messages], ["user", "assistant", "tool", "assistant"])
+        self.assertEqual(messages[1]["tool_calls"][0]["function"]["name"], "music_controls")   # the tool call
+        self.assertIn("Get Lucky", messages[2]["content"])                                     # what it said
+        self.assertIn("Get Lucky", messages[-1]["content"])                                    # the reply
 
     def test_shortcut_tells_the_screen_which_tool_ran(self):
         seen = []
