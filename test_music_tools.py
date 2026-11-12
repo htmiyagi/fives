@@ -244,6 +244,10 @@ class AppControlTests(FakeSpotify):
         self.assertEqual(music_tools.music_controls("resume"), music_tools.APP_PERMISSION)
         self.assertEqual(self.told, [])
 
+    def test_every_control_has_a_reply_and_a_popup_word(self):   # a missing word would crash that control
+        self.assertEqual(set(music_tools.CONTROLS), set(music_tools.CONTROLS_SAID))
+        self.assertEqual(set(music_tools.CONTROLS), set(music_tools.POPUP_SAID))
+
     def test_controls_pop_the_indicator(self):
         self.app = dict(self.BRUNO)
         music_tools.music_controls("resume")
