@@ -136,6 +136,31 @@ class CallTests(unittest.TestCase):
             self.assertEqual(spotify_connect.call("POST", "/me/player/queue", uri="x"), {})
 
 
+class WeakMatchTests(FakeSpotify):
+    def song(self, name, artist):
+        return {"type": "track", "uri": "spotify:track:" + name, "name": name, "artists": [{"name": artist}]}
+
+    def test_looks_right(self):
+        back_in_black = self.song("Back In Black", "AC/DC")
+        self.assertTrue(music_tools.looks_right("bck in blak", back_in_black))           # typos are fine
+        self.assertTrue(music_tools.looks_right("Back in Black AC/DC", back_in_black))   # artist words count too
+        self.assertTrue(music_tools.looks_right("Harder Better Faster Stronger",
+                                                self.song("Harder, Better, Faster, Stronger", "Daft Punk")))
+        self.assertFalse(music_tools.looks_right("zzqx not a real song", self.song("Sweetness", "Elliot James Reay")))
+
+    def test_make_playlist_leaves_out_a_wrong_looking_match(self):
+        self.songs["zzqx"] = self.song("Sweetness", "Elliot James Reay")     # Spotify "finds" gibberish
+        reply = music_tools.make_playlist("Rock", ["Get Lucky", "zzqx"])
+        self.assertEqual(reply, "Made 'Rock' with 1 songs. Left out, not sure these are right: "
+                                "'zzqx' (best guess: Sweetness by Elliot James Reay).")
+        self.assertEqual(self.sent[-1][2], {"uris": ["spotify:track:lucky"]})   # Sweetness was NOT added
+
+    def test_add_to_playlist_refuses_a_wrong_looking_match(self):
+        self.songs["zzqx"] = self.song("Sweetness", "Elliot James Reay")
+        self.assertIn("Didn't add anything", music_tools.add_to_playlist("gym", "zzqx"))
+        self.assertEqual(self.sent, [])
+
+
 class NameMatchTests(unittest.TestCase):
     def test_matching(self):
         names = ["Chill Vibes 🌙", "Gym", "Chill"]

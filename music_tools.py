@@ -16,6 +16,7 @@ How a tool reaches Spotify:
 """
 
 import difflib
+import re
 import functools
 import subprocess
 import time
@@ -30,6 +31,8 @@ MATCH_CUTOFF = 0.6          # how close a playlist name has to be (0 = anything,
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
+WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
+ENOUGH_WORDS = 0.75         # at least 3/4 of the words you said must appear in the song Spotify found
 
 
 # ---- helpers (not tools) ------------------------------------------------------------------------------
@@ -82,6 +85,26 @@ def _list_names(playlists: list[dict]) -> str:
     """'Gym, Late Night, Road Trip' (so Rex can guess which one you meant)."""
     names = [p.get("name", "") for p in playlists if p.get("name")]
     return ", ".join(names) if names else "none yet"
+
+
+def _words(text: str) -> list[str]:
+    """'Harder, Better (Live)' -> ['harder', 'better', 'live']"""
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def looks_right(wanted: str, item: dict) -> bool:
+    """Is the song Spotify found really what was asked for?
+
+    Spotify's search almost always returns SOMETHING, even for gibberish, so we check: do at least 3/4 of the
+    words you said appear (spelling slips are fine) in the song's title and artists?
+        "bck in blak"          vs "Back in Black, AC/DC"            -> yes (bck~back, in, blak~black)
+        "zzqx not a real song" vs "Sweetness, Elliot James Reay"    -> no"""
+    said = _words(wanted)
+    found = _words(_describe(item))
+    if not said:
+        return True
+    hits = [word for word in said if word in found or difflib.get_close_matches(word, found, n=1, cutoff=WORD_CUTOFF)]
+    return len(hits) >= len(said) * ENOUGH_WORDS
 
 
 def _describe(item: dict) -> str:
@@ -228,27 +251,36 @@ def make_playlist(name: str, songs: list[str]) -> str:
     if not spotify_connect.connected():
         return NOT_CONNECTED
     try:
-        found, missing = _find_songs(songs)
+        found, missing, unsure = _find_songs(songs)
         if not found:
-            return f"Didn't make '{name}': couldn't find any of those songs on Spotify."
+            return f"Didn't make '{name}': couldn't find any of those songs on Spotify." + _unsure_note(unsure)
         playlist = spotify_connect.call("POST", "/me/playlists", {"name": name, "public": False})
         _add_songs(playlist["id"], [song["uri"] for song in found])
     except SpotifyError as err:
         return _explain(err)
     reply = f"Made '{name}' with {len(found)} songs."
-    return reply + (f" Couldn't find: {', '.join(missing)}." if missing else "")
+    reply += f" Couldn't find: {', '.join(missing)}." if missing else ""
+    return reply + _unsure_note(unsure)
 
 
-def _find_songs(songs: list[str]) -> tuple[list[dict], list[str]]:
-    """Search each song. Returns (the songs found, the names that weren't found)."""
-    found, missing = [], []
+def _find_songs(songs: list[str]) -> tuple[list[dict], list[str], list[str]]:
+    """Search each song. Returns (songs found, names not found, notes on songs left out because the match
+    looked wrong). Left-out songs are NOT added, so a typo never sneaks a random song into your playlist."""
+    found, missing, unsure = [], [], []
     for wanted in songs:
         song = _search(wanted, "song")
-        if song:
+        if not song:
+            missing.append(wanted)
+        elif looks_right(wanted, song):
             found.append(song)
         else:
-            missing.append(wanted)
-    return found, missing
+            unsure.append(f"'{wanted}' (best guess: {_describe(song)})")
+    return found, missing, unsure
+
+
+def _unsure_note(unsure: list[str]) -> str:
+    """The sentence about left-out songs, so Rex can retry with better words or ask the user."""
+    return f" Left out, not sure these are right: {'; '.join(unsure)}." if unsure else ""
 
 
 def _add_songs(playlist_id: str, uris: list[str]) -> None:
@@ -274,6 +306,8 @@ def add_to_playlist(playlist: str, song: str = "") -> str:
         item = _search(song, "song") if song else spotify_connect.get("/me/player/currently-playing").get("item")
         if not item:
             return f"Couldn't find a song called '{song}' on Spotify." if song else "Nothing is playing to add."
+        if song and not looks_right(song, item):
+            return f"Didn't add anything: not sure '{song}' is {_describe(item)}. Try adding the artist's name."
         _add_songs(target["id"], [item["uri"]])
     except SpotifyError as err:
         return _explain(err)
