@@ -204,7 +204,7 @@ class AppControlTests(FakeSpotify):
 
     def test_resume_plays_whats_loaded(self):                    # "play the song", the moment that started this
         self.app = dict(self.BRUNO)
-        self.assertEqual(music_tools.music_controls("resume"), "Playing The Most Beautiful Thing by Bruno Major.")
+        self.assertEqual(music_tools.music_controls("resume"), "Resumed The Most Beautiful Thing by Bruno Major.")
         self.assertEqual(self.told, ["play"])
 
     def test_pause(self):
@@ -235,7 +235,7 @@ class AppControlTests(FakeSpotify):
     def test_controls_pop_the_indicator(self):
         self.app = dict(self.BRUNO)
         music_tools.music_controls("resume")
-        self.assertEqual(self.popups, [("PLAYING", "The Most Beautiful Thing")])
+        self.assertEqual(self.popups, [("RESUMED", "The Most Beautiful Thing")])
 
     def test_unknown_action(self):
         self.assertIn("not 'louder'", music_tools.music_controls("louder"))
