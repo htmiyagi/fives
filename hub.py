@@ -45,7 +45,10 @@ from AppKit import (NSAffineTransform, NSAppearance, NSApplication, NSBackingSto
                     NSGraphicsContext, NSImage, NSKernAttributeName, NSMakeRect, NSScreen, NSShadow, NSString, NSTrackingArea, NSURL,
                     NSView, NSVisualEffectView, NSWindow, NSZeroRect)
 from Foundation import NSData, NSObject, NSTimer
+from AppKit import NSColorSpace
 from PyObjCTools import AppHelper
+from Quartz import (CGContextBeginTransparencyLayer, CGContextEndTransparencyLayer, CGContextSetBlendMode,
+                    kCGBlendModeDestinationIn)   # Quartz comes with pyautogui, nothing new to install
 
 import eyes_link
 import settings
@@ -94,6 +97,7 @@ ROW_X, ROW_Y, ROW_W, ROW_H, ROW_GAP = 56, 170, 888, 76, 12
 CONFIG_BUTTON = (56, 556, 318, 40)
 ROWS_BOTTOM = CONFIG_BUTTON[1] - 14     # the settings rows scroll inside ROW_Y..ROWS_BOTTOM
 WHEEL_STEP = 12                         # how far one click of a mouse wheel scrolls
+FADE = 26                               # how tall the soft fade is where rows scroll out of sight
 RESTART = (W / 2 - 110, 452, 220, 48)
 EYES_KEYS = "cmhtl[]"            # keys passed on to eyes.py while the EYES tab is showing (q is handled here)
 
@@ -635,6 +639,7 @@ def draw_settings():
     text("your choices are saved on this Mac", 60, 138, 13, PALE, False, 1.0, 0.8)
     NSGraphicsContext.saveGraphicsState()                   # rows only show inside the scrolling area
     NSBezierPath.clipRect_(NSMakeRect(0, ROW_Y - 10, W, ROWS_BOTTOM - ROW_Y + 10))
+    CGContextBeginTransparencyLayer(NSGraphicsContext.currentContext().CGContext(), None)  # rows on their own layer
     for i, (key, title, about) in enumerate(ROWS):
         x, y, w, h = row_rect(i)
         pill((x, y, w, h), (10, 20, 10, 10), "br", fill=BLUE, fill_alpha=0.09, stroke=SKY, width=1.0, stroke_alpha=0.32)
@@ -670,6 +675,8 @@ def draw_settings():
             pill((tx, ty, tw, th), fill=BLUE if on else DEEP, fill_alpha=0.80 if on else 0.55,
                  stroke=WHITE if hov else BLUE, width=1.2, stroke_alpha=0.9 if hov else 0.6, glow=8 if on else 0)
             oval(tx + (tw - th / 2 if on else th / 2), ty + th / 2, th / 2 - 5, fill=CORE if on else GREY)
+    fade_edges()
+    CGContextEndTransparencyLayer(NSGraphicsContext.currentContext().CGContext())
     NSGraphicsContext.restoreGraphicsState()
     draw_scrollbar()
     hov = S.hover == "config"
@@ -679,6 +686,22 @@ def draw_settings():
              WHITE if hov else PALE, True, 2.5)
     text("opens config.py: the numbers behind the hand tracking", CONFIG_BUTTON[0] + CONFIG_BUTTON[2] + 18,
          CONFIG_BUTTON[1] + 12, 13, GREY, False, 0.8, 0.85)
+
+
+def fade_edges():
+    """Softly fade the rows where they scroll out of sight. "Destination in" keeps what's already drawn only as
+    much as the gradient is solid: like an eraser that rubs harder near the edge. Only fades an edge that has
+    more rows past it, so the list looks normal when it's all the way up or down."""
+    top, bottom = ROW_Y - 10, ROWS_BOTTOM
+    height = bottom - top
+    edge = FADE / height                                       # the fade's size, as a fraction of the area
+    fade_top, fade_bottom = S.settings_scroll > 0, S.settings_scroll < max_scroll()
+    colors = [NSColor.colorWithWhite_alpha_(1, 0 if fade_top else 1), NSColor.colorWithWhite_alpha_(1, 1),
+              NSColor.colorWithWhite_alpha_(1, 1), NSColor.colorWithWhite_alpha_(1, 0 if fade_bottom else 1)]
+    mask = NSGradient.alloc().initWithColors_atLocations_colorSpace_(colors, (0.0, edge, 1 - edge, 1.0),
+                                                             NSColorSpace.sRGBColorSpace())
+    CGContextSetBlendMode(NSGraphicsContext.currentContext().CGContext(), kCGBlendModeDestinationIn)
+    mask.drawInRect_angle_(NSMakeRect(0, top, W, height), 90)
 
 
 def draw_scrollbar():
