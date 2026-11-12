@@ -1,5 +1,5 @@
 """
-Tests for brain.py's instant shortcuts ("skip", "pause", ...), with no model and no Spotify.
+Tests for brain.py: instant shortcuts ("skip", "pause", ...) and the run-first loop, with no model and no Spotify.
 
 Run them:   .venv/bin/python -m unittest test_brain -v
 
@@ -77,14 +77,16 @@ def fake_model_reply(tool_name="", args=None, content=""):
     return SimpleNamespace(message=SimpleNamespace(content=content, tool_calls=calls))
 
 
-class MusicSentencesAreShownAsIs(unittest.TestCase):
-    """The music tools already write a correct sentence, so Rex shows it instead of rewording it
-    (rewording is where he swapped song and artist names in testing)."""
+class ToolSentencesAreShownAsIs(unittest.TestCase):
+    """Every tool already writes a correct sentence, so Rex shows it instead of rewording it
+    (rewording is where he swapped song and artist names in testing, and it costs a model call)."""
 
     def setUp(self):
         self.model = mock.Mock()
-        tool_sentence = "Playing nouvelle vague by wave to earth."
-        for target, fake in (("brain.run_tool", lambda name, args: tool_sentence),
+        self.tool_sentences = {"play_music": "Playing nouvelle vague by wave to earth.",
+                               "open_app": "Opened Safari.",
+                               "make_playlist": "Made 'chill' with 3 songs."}
+        for target, fake in (("brain.run_tool", lambda name, args: self.tool_sentences[name]),
                              ("brain.ollama.chat", self.model)):
             patcher = mock.patch(target, fake)
             patcher.start()
@@ -102,12 +104,56 @@ class MusicSentencesAreShownAsIs(unittest.TestCase):
         brain.think(messages, "play nouvelle vague")
         self.assertEqual(messages[-1], {"role": "assistant", "content": "Playing nouvelle vague by wave to earth."})
 
-    def test_other_tools_still_get_a_reply_from_rex(self):
-        self.model.side_effect = [fake_model_reply("make_playlist", {"name": "chill", "songs": []}),
-                                  fake_model_reply(content="Made your chill playlist!")]
+    def test_non_music_tools_also_skip_the_reword(self):        # run-first: true for every tool now
+        self.model.side_effect = [fake_model_reply("make_playlist", {"name": "chill", "songs": []})]
         reply = brain.think([], "make a chill playlist")
-        self.assertEqual(reply, "Made your chill playlist!")
+        self.assertEqual(reply, "Made 'chill' with 3 songs.")
+        self.assertEqual(self.model.call_count, 1)
+
+    def test_a_possible_step_two_gets_one_more_round(self):     # "...and open Safari" must not be dropped
+        self.model.side_effect = [fake_model_reply("play_music", {"what": "nouvelle vague"}),
+                                  fake_model_reply("open_app", {"name": "Safari"})]
+        reply = brain.think([], "play nouvelle vague and open safari")
+        self.assertEqual(reply, "Playing nouvelle vague by wave to earth. Opened Safari.")   # both rounds' words
+        self.assertEqual(self.model.call_count, 2)                 # one extra round, not a third reword
+
+    def test_extra_round_with_nothing_left_uses_rexs_words(self):   # e.g. "Simon and Garfunkel"
+        self.model.side_effect = [fake_model_reply("play_music", {"what": "the boxer"}),
+                                  fake_model_reply(content="Playing The Boxer by Simon & Garfunkel.")]
+        reply = brain.think([], "play the boxer by simon and garfunkel")
+        self.assertEqual(reply, "Playing The Boxer by Simon & Garfunkel.")
         self.assertEqual(self.model.call_count, 2)
+
+
+class WhenToGoAnotherRound(unittest.TestCase):
+    def test_failed_sounding_sentences_are_spotted(self):
+        self.assertTrue(brain.sounds_failed("Couldn't find a song called 'xyz' on Spotify."))
+        self.assertTrue(brain.sounds_failed("Something went wrong with Spotify: timeout"))
+        self.assertTrue(brain.sounds_failed("There is no tool called fly."))
+        self.assertFalse(brain.sounds_failed("Playing Get Lucky by Daft Punk."))
+        self.assertFalse(brain.sounds_failed("No version by Adele, so playing Hello instead."))   # worked
+
+    def test_a_failure_always_gets_another_round(self):
+        self.assertTrue(brain.needs_another_round("play xyz", ["Couldn't find a song called 'xyz'."], True))
+        self.assertTrue(brain.needs_another_round("play xyz", ["Couldn't find a song called 'xyz'."], False))
+
+    def test_joining_word_after_one_tool_on_the_first_round(self):
+        self.assertTrue(brain.needs_another_round("play halo then open notes", ["Playing Halo."], True))
+        self.assertTrue(brain.needs_another_round("pause and also set volume to 20", ["Paused."], True))
+
+    def test_no_extra_round_when_it_already_did_both_or_already_went_again(self):
+        self.assertFalse(brain.needs_another_round("play halo and open notes",
+                                                   ["Playing Halo.", "Opened Notes."], True))   # did both at once
+        self.assertFalse(brain.needs_another_round("play halo and open notes", ["Opened Notes."], False))
+        self.assertFalse(brain.needs_another_round("play halo", ["Playing Halo."], True))
+        self.assertFalse(brain.needs_another_round("play brandy", ["Playing Brandy."], True))   # "and" inside a word
+
+
+class TheModelIsToldToDoItAllAtOnce(unittest.TestCase):
+    def test_new_conversation_includes_the_one_go_rule(self):
+        with mock.patch("brain.playlist_note", return_value=""):
+            system = brain.new_conversation()[0]["content"]
+        self.assertIn(brain.ONE_GO_RULE, system)
 
 
 if __name__ == "__main__":

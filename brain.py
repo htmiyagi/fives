@@ -3,8 +3,8 @@ brain.py - connects the language model (Lesson 1) to the tools (Lesson 2).
 
 The whole trick is one loop:
   1. send the conversation to the model
-  2. if it asks for tools, run them and add the results to the conversation
-  3. repeat until it answers in plain words
+  2. if it asks for tools, run them and show the tools' own sentences as the reply ("run-first")
+  3. only go another round if a tool failed or there may be a step 2 ("...and open Safari")
 """
 
 import string
@@ -32,9 +32,17 @@ SHORTCUTS = {
 }
 POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip please" counts as "skip"
 
-# These tools already answer in a correct, finished sentence ("Playing X by Y."), so we show it as-is.
+# Run-first: every tool already answers in a finished sentence ("Playing X by Y."), so we show it as-is.
 # Letting the model reword it is how song and artist names got swapped in testing. Also saves a model call.
-SPEAKS_FOR_ITSELF = {"play_music", "queue_song", "music_controls", "now_playing"}
+# Told to the model so a two-part request ("play X and open Safari") comes back as two tool calls in one go.
+ONE_GO_RULE = "If a request needs more than one tool, call all of them at once, in the same reply."
+
+# Safety net in case it doesn't: a joining word means there may be a step 2 still to do.
+STEP_WORDS = {"and", "then", "also", "plus", "after"}
+
+# How the tools' sentences start when something went wrong (see tools.py and music_tools.py).
+FAILED_STARTS = ("Couldn't", "Didn't", "No playlist", "Nothing", "Something", "Spotify said no",
+                 "Spotify forgot", "Spotify isn't", "Shortcut failed", "The tool", "There is no tool", "I can ")
 
 
 def shortcut_action(user_text: str) -> str | None:
@@ -45,10 +53,24 @@ def shortcut_action(user_text: str) -> str | None:
     return SHORTCUTS.get(" ".join(words))
 
 
+def sounds_failed(result: str) -> bool:
+    """'Couldn't find a song called...' -> True. The model gets a turn to retry or explain."""
+    return result.startswith(FAILED_STARTS)
+
+
+def needs_another_round(user_text: str, results: list[str], first_round: bool) -> bool:
+    """Run-first: stop as soon as the tools are done, unless one failed, or the first round ran
+    just one tool but you asked for more ('play Halo AND open Notes'). Costs ~0.6s when it fires."""
+    if any(sounds_failed(result) for result in results):
+        return True
+    words = user_text.lower().translate(str.maketrans("", "", string.punctuation)).split()
+    return first_round and len(results) == 1 and any(word in STEP_WORDS for word in words)
+
+
 def new_conversation() -> list:
     """Start a fresh conversation: FIVES's personality, plus facts the model can't see (your playlist names).
     Read once per conversation (~0.25s), not every message, so replies stay fast."""
-    facts = [note for note in (playlist_note(),) if note]
+    facts = [note for note in (ONE_GO_RULE, playlist_note()) if note]
     return [{"role": "system", "content": "\n\n".join([config.PERSONALITY, *facts])}]
 
 
@@ -86,7 +108,8 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
     if action:                             # a plain "skip" etc: no model needed
         return run_shortcut(messages, action, on_tool)
 
-    for _ in range(config.MAX_TOOL_ROUNDS):
+    said_before = []                       # tool sentences from earlier rounds, so a step 2 doesn't hide step 1
+    for round_number in range(config.MAX_TOOL_ROUNDS):
         response = ollama.chat(
             model=config.MODEL,
             messages=messages,
@@ -111,9 +134,10 @@ def think(messages: list, user_text: str, on_tool=None) -> str:
             messages.append({"role": "tool", "tool_name": name, "content": result})
             results.append(result)
 
-        if all(call.function.name in SPEAKS_FOR_ITSELF for call in calls):
-            reply = " ".join(results)      # the tools' own words, names exactly right
+        if not needs_another_round(user_text, results, first_round=round_number == 0):
+            reply = " ".join(said_before + results)   # the tools' own words, names exactly right
             messages.append({"role": "assistant", "content": reply})
             return reply
+        said_before = said_before + results   # going another round: keep what's been done so far
 
     return "I hit my limit of tool calls for one request, so I stopped."
