@@ -109,8 +109,7 @@ def playlist_note() -> str:
         names = _list_names(_my_playlists())
     except SpotifyError:
         return ""
-    return (f"The user's Spotify playlists: {names}. When they mean one of these, pass its exact name "
-            f"(keep 'my' in front if they said it).")
+    return (f"The user's Spotify playlists: {names}. When they mean one of these, pass its exact name.")
 
 
 def _list_names(playlists: list[dict]) -> str:
