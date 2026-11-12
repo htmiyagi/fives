@@ -86,10 +86,11 @@ GRIP = (W - 36, H - 36, 36, 36)
 ROWS = [                         # the SETTINGS tab: (settings.py key, title, what it means)
     ("music_app", "DEFAULT MUSIC APP", "Which app \"play some music\" opens"),
     ("spotify", "SPOTIFY", ""),          # not a saved choice: a CONNECT button (see spotify_connect.py)
+    ("play_order", "PLAY ORDER", "What \"play my playlist\" does if you don't say"),
     ("ask_first", "ASK ME FIRST", "Show me before anything is sent or deleted"),
     ("speak_replies", "TALK BACK", "Read answers out loud"),
 ]
-ROW_X, ROW_Y, ROW_W, ROW_H, ROW_GAP = 56, 170, 888, 76, 12
+ROW_X, ROW_Y, ROW_W, ROW_H, ROW_GAP = 56, 170, 888, 68, 8      # 5 rows fit above the CONFIG button
 CONFIG_BUTTON = (56, 556, 318, 40)
 RESTART = (W / 2 - 110, 452, 220, 48)
 EYES_KEYS = "cmhtl[]"            # keys passed on to eyes.py while the EYES tab is showing (q is handled here)
@@ -318,6 +319,11 @@ def icon(name, cx, cy, c):
     elif name == "music_app":                            # a note
         oval(cx - 4, cy + 8, 5.5, 4.5, fill=c)
         stroke([(cx + 1, cy + 8), (cx + 1, cy - 11), (cx + 10, cy - 7)], c, 2.2)
+    elif name == "play_order":                           # shuffle: two crossing arrows
+        stroke([(cx - 10, cy - 6), (cx + 10, cy + 6)], c, 2.2)
+        stroke([(cx - 10, cy + 6), (cx + 10, cy - 6)], c, 2.2)
+        stroke([(cx + 5, cy + 7), (cx + 10, cy + 6), (cx + 8, cy + 1)], c, 2.0)
+        stroke([(cx + 5, cy - 7), (cx + 10, cy - 6), (cx + 8, cy - 1)], c, 2.0)
     elif name == "ask_first":                            # a hand-up "wait": a ring with a check
         stroke([(cx - 8, cy + 1), (cx - 2, cy + 7), (cx + 9, cy - 7)], c, 2.4)
     elif name == "spotify":                              # three sound waves
@@ -437,17 +443,17 @@ def choice_rects(i, key):
     options = settings.CHOICES[key]
     each = 150
     left = x + w - 24 - each * len(options)
-    return [(option, (left + n * each, y + 16, each, 44)) for n, option in enumerate(options)]
+    return [(option, (left + n * each, y + (h - 44) / 2, each, 44)) for n, option in enumerate(options)]
 
 
 def toggle_rect(i):
     x, y, w, h = row_rect(i)
-    return (x + w - 24 - 78, y + 18, 78, 40)
+    return (x + w - 24 - 78, y + (h - 40) / 2, 78, 40)
 
 
 def connect_rect(i):
     x, y, w, h = row_rect(i)
-    return (x + w - 24 - 170, y + 18, 170, 40)
+    return (x + w - 24 - 170, y + (h - 40) / 2, 170, 40)
 
 
 def wrap(s, size, width, bold=False, kern=0.8):
@@ -619,8 +625,8 @@ def draw_settings():
             plate(rect, fill=BLUE, fill_alpha=(0.30 if hov else 0.06) if name else (0.75 if hov else 0.50),
                   stroke=WHITE if hov else SKY, width=1.3, stroke_alpha=0.95, glow=0 if name else (10 if hov else 5))
             text_mid("DISCONNECT" if name else "CONNECT", rect[0] + rect[2] / 2, rect[1] + 12, 13, WHITE, True, 2.5)
-        text(title, x + 90, y + 13, 19, WHITE, True, 3.0)
-        text(about, x + 91, y + 42, 14, PALE, False, 0.8, 0.9)
+        text(title, x + 90, y + 10, 19, WHITE, True, 3.0)
+        text(about, x + 91, y + 38, 14, PALE, False, 0.8, 0.9)
         if key == "spotify":
             continue
         if key in settings.CHOICES:

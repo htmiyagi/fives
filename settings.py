@@ -20,11 +20,13 @@ FILE = Path(__file__).resolve().parent / "settings.json"
 
 DEFAULTS = {
     "music_app": "Spotify",      # which app "play music" means
+    "play_order": "Shuffle",     # what "play my playlist" does when you don't say shuffle or in order
     "ask_first": True,           # show me before anything is sent or deleted
     "speak_replies": False,      # read answers out loud
 }
 CHOICES = {
     "music_app": ["Spotify", "Apple Music"],
+    "play_order": ["Shuffle", "In order", "As is"],     # "As is" = keep whatever Spotify was doing
 }
 
 _cache = None
