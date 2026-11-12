@@ -45,6 +45,44 @@ def open_app(name: str) -> str:
     return f"Couldn't open {name}: {result.stderr.strip()}"
 
 
+# Quitting these would quit FIVES itself (it runs inside them).
+APPS_FIVES_RUNS_IN = {"terminal", "python", "fives"}
+QUIT_WAIT_SECONDS = 5      # how long to wait before giving up on an app stuck on a "save changes?" box
+
+# AppleScript that politely quits an app (like Cmd+Q). The app's name arrives as `argv`, a separate
+# argument, never pasted into this text, so a name with quotes in it can't sneak in its own commands.
+QUIT_SCRIPT = [
+    "on run argv",
+    "set appName to item 1 of argv",
+    'if application appName is not running then return "not running"',
+    f"with timeout of {QUIT_WAIT_SECONDS} seconds",
+    "tell application appName to quit",
+    "end timeout",
+    'return "quit"',
+    "end run",
+]
+
+
+@tool
+def close_app(name: str) -> str:
+    """Quit a Mac application by name, like pressing Cmd+Q. If it has unsaved work, it asks first.
+
+    Args:
+        name: The app's name, for example "Safari", "Notes", or "OBS".
+    """
+    if name.strip().lower() in APPS_FIVES_RUNS_IN:
+        return f"I won't close {name}: FIVES is running in it."
+    command = ["osascript"] + [part for line in QUIT_SCRIPT for part in ("-e", line)] + [name]
+    result = _run(command)
+    if result.returncode == 0:
+        return f"{name} isn't open." if result.stdout.strip() == "not running" else f"Closed {name}."
+    if "-1712" in result.stderr:   # AppleScript's "timed out" code: a save box is waiting on you
+        return f"Asked {name} to quit. It's waiting for you to save or cancel."
+    if "-128" in result.stderr:    # "user canceled": you clicked Cancel in the save box
+        return f"{name} is still open: you chose to keep it."
+    return f"Couldn't close {name}: {result.stderr.strip()}"
+
+
 @tool
 def open_url(url: str) -> str:
     """Open a website in the default browser.
