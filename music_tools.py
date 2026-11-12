@@ -202,7 +202,8 @@ def _describe(item: dict) -> str:
 
 def _wake_spotify() -> str | None:
     """Open the Spotify app and wait for it to show up as a device. Returns its device id, or None."""
-    subprocess.run(["open", "-a", "Spotify"], capture_output=True)
+    # -g = don't jump to the front, -j = start hidden: the music plays, the window stays out of your way
+    subprocess.run(["open", "-g", "-j", "-a", "Spotify"], capture_output=True)
     deadline = time.time() + WAKE_UP_SECONDS
     while time.time() < deadline:
         devices = spotify_connect.get("/me/player/devices").get("devices") or []
