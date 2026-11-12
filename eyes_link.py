@@ -5,6 +5,7 @@ Two programs can't draw in the same window. So they share a piece of memory inst
 
     eyes.py  --- each finished HUD picture --->  [ shared memory ]  --- newest picture --->  hub.py's EYES tab
     eyes.py  <--------------- "key 99" lines on eyes.py's stdin (the keys you press) ------  hub.py
+    eyes.py  --- "show the BRAIN tab" (a wheel wedge was clicked) --->  [ shared memory ]  --->  hub.py
 
 The picture is not changed on the way: the exact pixels eyes.py would have put in its own window are copied
 across as a .bmp (a picture format with no compression, so nothing is lost).
@@ -28,7 +29,10 @@ import threading
 from multiprocessing import shared_memory
 
 ENV = "FIVES_EYES_LINK"          # hub.py puts the shared memory's name here for eyes.py
-HEAD = 32                        # bytes at the start: counter (8), picture length (4), "someone is watching" (1)
+HEAD = 32                        # bytes at the start: counter (8), picture length (4), "someone is watching" (1),
+                                 # tab request counter (1, byte 13), tab name (16, bytes 16-31)
+TAB_ASKED = 13                   # goes up by one each time eyes.py asks for a tab
+TAB_NAME = slice(16, 32)         # which tab, e.g. b"brain" padded with zero bytes
 ROOM = 64 * 1024 * 1024          # the biggest picture that fits (the normal HUD picture is about 11 MB)
 NO_KEY = 255                     # what cv2.waitKey(1) & 0xFF gives when no key was pressed
 
@@ -47,6 +51,21 @@ def _attach(name):
         except Exception:
             pass
         return shm
+
+
+def put_tab(buf, name: str) -> None:
+    """Ask for a tab: write its name first, THEN bump the counter, so hub.py never reads half a name."""
+    raw = name.encode()[:16]
+    buf[TAB_NAME] = raw + bytes(16 - len(raw))
+    buf[TAB_ASKED] = (buf[TAB_ASKED] + 1) % 256
+
+
+def read_tab(buf, last: int) -> tuple[str | None, int]:
+    """(the tab asked for, or None if nothing new since `last`; the counter to pass next time)."""
+    asked = buf[TAB_ASKED]
+    if asked == last:
+        return None, last
+    return bytes(buf[TAB_NAME]).rstrip(b"\0").decode(errors="ignore"), asked
 
 
 class Sender:
@@ -72,6 +91,10 @@ class Sender:
         except Exception:
             pass
         self.keys.put(ord("q"))                      # the FIVES window hung up (closed or crashed): quit too
+
+    def ask_tab(self, name: str) -> None:
+        """Ask the FIVES window to show one of its tabs (brain, eyes, settings) and come to the front."""
+        put_tab(self.map, name)
 
     def show(self, picture) -> int:
         """Like cv2.imshow + cv2.waitKey in one: pass the picture on, return the key pressed (NO_KEY = none)."""
@@ -113,6 +136,7 @@ class Viewer:
         self.name = self.shm.name                                              # the Mac only uses what gets written
         self.map = self.shm.buf
         self.seen = 0                                # the counter of the last picture we handed out
+        self.asked = 0                               # the tab-request counter we last answered
 
     def env(self) -> dict:
         """The environment to start eyes.py with, so it knows where the shared memory is."""
@@ -132,6 +156,11 @@ class Viewer:
             return None                              # eyes.py started the next picture while we copied: next time
         self.seen = seq
         return data
+
+    def tab_request(self) -> str | None:
+        """The tab eyes.py asked for since last time (e.g. "brain"), or None."""
+        name, self.asked = read_tab(self.map, self.asked)
+        return name
 
     def forget(self) -> None:
         """Ignore whatever is in the memory right now (a leftover picture from an eyes.py that has since stopped)."""
