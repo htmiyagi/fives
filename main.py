@@ -6,6 +6,7 @@ import subprocess
 
 import config
 from brain import new_conversation, think
+from warmup import warm_up_in_background
 
 
 def speak(text: str) -> None:
@@ -19,6 +20,7 @@ def show_tool(name, args, result):
 
 
 def main() -> None:
+    warm_up_in_background(config.MODEL, config.KEEP_ALIVE, config.CONTEXT_TOKENS)   # loads the model while you type your first request
     print(f"{config.NAME} online ({config.MODEL}). Type a request, or 'quit'.")
     messages = new_conversation()
 
