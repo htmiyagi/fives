@@ -141,7 +141,7 @@ class WheelActions(unittest.TestCase):
         self.assertEqual(actions.run("open_window", window="brain"), "The brain window isn't running.")
         self.assertEqual(actions.run("open_wheel"), "The wheel window isn't running.")
 
-    def test_every_wheel_window_can_be_asked_for(self):
+    def test_every_wheel_window_is_a_known_name(self):
         for name in wl.WINDOWS:
             said = actions.run("open_window", window=name)
             self.assertFalse(said.startswith("FIVES has no window"), name)

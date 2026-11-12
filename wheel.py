@@ -20,6 +20,7 @@ The wedges and their order come from settings ("wheel_order"); the rules and mat
 Look: blue on near-black, Rajdhani, blues only. Sizes and colours are the constants just below: tweak freely.
 """
 
+import math
 import os
 import signal
 import sys
@@ -197,8 +198,13 @@ class WheelView(NSView):
     def wedge_under(self, event):
         p = self.convertPoint_fromView_(event.locationInWindow(), None)
         cx, cy = self.centre()
-        return wheel_logic.wedge_at(p.x, p.y, cx, cy, INNER, OUTER * (1 + wheel_logic.HOVER_GROW),
-                                    len(self.order))
+        pop = 0.85 + 0.15 * self.opening
+        biggest = OUTER * (1 + wheel_logic.HOVER_GROW) * pop
+        found = wheel_logic.wedge_at(p.x, p.y, cx, cy, INNER * pop, biggest, len(self.order))
+        if found is None:
+            return None
+        reach = OUTER * self.grown[found] * pop        # only as far out as that wedge is drawn right now
+        return found if math.hypot(p.x - cx, p.y - cy) <= reach else None
 
     @objc.python_method
     def step(self):
