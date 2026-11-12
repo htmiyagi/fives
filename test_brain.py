@@ -31,6 +31,10 @@ class ShortcutWords(unittest.TestCase):
         self.assertEqual(brain.shortcut_action("skip it"), "skip")
         self.assertEqual(brain.shortcut_action("rewind to start!! :D"), "restart")
 
+    def test_slang_for_start_over_is_a_shortcut(self):
+        self.assertEqual(brain.shortcut_action("Run it back!"), "restart")
+        self.assertEqual(brain.shortcut_action("play it again"), "restart")
+
     def test_longer_requests_still_go_to_the_model(self):
         self.assertIsNone(brain.shortcut_action("skip this and play Radiohead"))
         self.assertIsNone(brain.shortcut_action("play Get Lucky"))

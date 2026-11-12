@@ -38,7 +38,8 @@ POPUP_SAID = {"pause": "PAUSED", "resume": "RESUMED", "skip": "SKIPPED TO", "pre
 CONTROLS_SAID = {"pause": "Paused", "resume": "Resumed", "skip": "Skipped. Now playing", "previous": "Back to",
                  "restart": "Started over:"}
 # The model may pass the user's own word; we translate it. Copying "rewind" is easier for it than mapping it.
-ACTION_ALIASES = {"rewind": "restart", "start over": "restart"}
+ACTION_ALIASES = {"rewind": "restart", "start over": "restart", "run it back": "restart",
+                  "play it again": "restart"}
 NOT_CONNECTED = "Spotify isn't connected yet. Open FIVES > SETTINGS > CONNECT SPOTIFY first."
 # What a person says -> the word Spotify's search uses
 KINDS = {"song": "track", "album": "album", "artist": "artist", "playlist": "playlist"}
@@ -430,8 +431,9 @@ def music_controls(action: str) -> str:
 
     Args:
         action: One of "pause", "resume", "skip", "previous" (the song before this one), "restart" (this song
-            from the beginning), or "rewind" (same as restart). Use "resume" for "play" / "play the song" when the
-            user didn't name anything. If the user says "rewind", pass "rewind". Use "previous" only for "back",
+            from the beginning), or "rewind" / "run it back" / "play it again" (all the same as restart). Use
+            "resume" for "play" / "play the song" when the user didn't name anything. If the user says "rewind",
+            "run it back", or "play it again", pass those exact words. Use "previous" only for "back",
             "last song", or "previous song".
     """
     action = action.lower().strip()

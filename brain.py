@@ -29,6 +29,7 @@ SHORTCUTS = {
     "last song": "previous",
     "restart": "restart", "rewind": "restart", "rewind to start": "restart", "start over": "restart",
     "from the top": "restart", "restart song": "restart", "restart the song": "restart",
+    "run it back": "restart", "play it again": "restart",
 }
 POLITE_WORDS = {"please", "rex", "hey"}   # dropped before matching, so "skip please" counts as "skip"
 
