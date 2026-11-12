@@ -22,6 +22,8 @@ WORKFLOW.md and GESTURES.md the whole way.
 - Add files by name. Never commit `config.py`, `settings.json`, `spotify_keys.json`, or anything gitignored.
 - **No real side effects while testing:** don't play / pause / change Spotify, don't send anything,
   don't delete anything, don't open other apps. Use fakes or the code's test hooks.
+- **Never turn on the webcam or load the model.** Don't run `hub.py`, `launcher.py` or `eyes.py`:
+  `hub.py` starts `eyes.py` (webcam) and warms up Ollama the moment it opens. Don't call Ollama at all.
 - **Never use screen recording or screenshots of the screen** (`screencapture` etc.). Hoyu doesn't allow it.
   To see a window, draw it into an image yourself (see "Looking at it").
 - **Don't design or tune gestures.** That's Hoyu's (GESTURES.md). Hook up actions so gestures can be
@@ -47,9 +49,12 @@ Don't stop to ask. Make the reasonable choice and **write it down** for the PR.
 3. **Build** in small commits with clear messages.
 4. **Test it yourself:**
    - Write tests for the logic (math, settings saving, order, keybind mapping, actions). Run all the
-     repo's tests, not just new ones.
-   - **Smoke test:** start the window/program with a timeout, check it opens without errors and quits
-     cleanly. Read what it printed.
+     repo's tests, not just new ones. Tests use `unittest` (no pytest), as `test_*.py` in the repo root:
+     `.venv/bin/python -m unittest discover -p "test_*.py" -v`
+   - **Smoke test:** start the feature's own window or module on its own, with a timeout (never
+     `hub.py`, see Hard rules). Check it opens without errors and quits cleanly. Read what it printed.
+     If the feature only lives inside `hub.py`, build just its view in a small script and render it
+     (below) without starting the hub.
    - **Looking at it:** render the window's view into a PNG and look at the image. In AppKit:
      `rep = view.bitmapImageRepForCachingDisplayInRect_(view.bounds())`,
      `view.cacheDisplayInRect_toBitmapImageRep_(view.bounds(), rep)`,
