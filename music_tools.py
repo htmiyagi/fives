@@ -19,6 +19,7 @@ import difflib
 import re
 import functools
 import subprocess
+import threading
 import time
 import unicodedata
 
@@ -49,6 +50,8 @@ SETTLE_SECONDS = 0.4         # after a skip, the app needs a moment before it re
 CHECK_TRIES = 6              # after pressing play, look this many times to see if music really started...
 CHECK_EVERY = 0.25           # ...this many seconds apart (so we wait at most ~1.5s)
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
+HIDE_SPOTIFY_SECONDS = 8    # how long after opening Spotify we keep hiding its window (it pops up while loading)
+SPOTIFY_BUNDLE_ID = "com.spotify.client"     # macOS's ID for the Spotify app
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
 WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
@@ -200,10 +203,26 @@ def _describe(item: dict) -> str:
     return f"{item.get('name', 'something')} by {artists}" if artists else item.get("name", "something")
 
 
+def _keep_spotify_hidden() -> None:
+    """For a few seconds after launch, hide Spotify every time it tries to show its window (like pressing Cmd+H).
+    Runs in a background thread so it doesn't slow down finding the device."""
+    try:
+        from AppKit import NSRunningApplication     # macOS's list of running apps (comes with pyobjc)
+    except ImportError:
+        return
+    deadline = time.time() + HIDE_SPOTIFY_SECONDS
+    while time.time() < deadline:
+        for app in NSRunningApplication.runningApplicationsWithBundleIdentifier_(SPOTIFY_BUNDLE_ID):
+            if not app.isHidden():
+                app.hide()
+        time.sleep(0.1)
+
+
 def _wake_spotify() -> str | None:
     """Open the Spotify app and wait for it to show up as a device. Returns its device id, or None."""
-    # -g = don't jump to the front, -j = start hidden: the music plays, the window stays out of your way
+    # -g = don't jump to the front, -j = start hidden. Spotify ignores -j and pops up anyway, so we hide it too.
     subprocess.run(["open", "-g", "-j", "-a", "Spotify"], capture_output=True)
+    threading.Thread(target=_keep_spotify_hidden, daemon=True).start()
     deadline = time.time() + WAKE_UP_SECONDS
     while time.time() < deadline:
         devices = spotify_connect.get("/me/player/devices").get("devices") or []
