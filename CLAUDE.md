@@ -9,6 +9,10 @@ eventually drives a 3D-printed robotic hand. Right now it's all software.
 Owner: Hoyu (first-year student, still learning). Read the "How to work with me"
 section before doing anything.
 
+Also read, when the task touches them:
+- `WORKFLOW.md` — the two phases (features + actions first, gestures second) and the action panel.
+- `GESTURES.md` — how each gesture gets designed, recorded, measured and wired, plus the gesture table.
+
 ---
 
 ## How to work with me (most important)
