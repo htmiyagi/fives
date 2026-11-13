@@ -59,5 +59,28 @@ class TabRequests(unittest.TestCase):
             viewer.close()
 
 
+class WhereTheHubIs(unittest.TestCase):
+    def test_parse_frame_reads_four_numbers(self):
+        self.assertEqual(eyes_link.parse_frame(["10", "20", "800", "600"]), (10.0, 20.0, 800.0, 600.0))
+
+    def test_parse_frame_gives_none_for_junk(self):
+        self.assertIsNone(eyes_link.parse_frame(["10", "x", "800", "600"]))
+
+    def test_tell_frame_writes_one_line_eyes_can_read(self):
+        class FakeProc:                  # stands in for the running eyes.py: its stdin is just a list of lines
+            class stdin:
+                lines = []
+                write = lines.append
+                flush = staticmethod(lambda: None)
+        self.assertTrue(eyes_link.Viewer.tell_frame(FakeProc, (10, 20.4, 800, 600)))
+        self.assertTrue(eyes_link.Viewer.tell_frame(FakeProc, None))
+        self.assertEqual(FakeProc.stdin.lines, ["frame 10 20 800 600\n", "hidden\n"])
+
+    def test_hide_and_front_fit_in_a_tab_request(self):
+        buf = fresh_head()
+        eyes_link.put_tab(buf, eyes_link.HIDE)
+        self.assertEqual(eyes_link.read_tab(buf, 0)[0], "hide")
+
+
 if __name__ == "__main__":
     unittest.main()

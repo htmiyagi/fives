@@ -97,6 +97,13 @@ class WindowActions(unittest.TestCase):
         self.assertEqual(actions.run("hide_music"), "The music window isn't running.")
         self.assertEqual(actions.run("put_away_sketch"), "The sketch window isn't running.")
 
+    def test_the_fives_window_can_be_put_away_and_brought_back(self):
+        hub = FakeWindow()
+        actions._windows[actions.HUB] = hub
+        self.assertIn("FIVES window put away", actions.run("hide_window", window="fives"))
+        actions.run("open_window", window="FIVES")      # the undo flick
+        self.assertEqual(hub.sent, ["hide", "show"])
+
     def test_connect_window_ignores_a_window_thats_turned_off(self):
         actions._windows.clear()
         actions.connect_window("music", None)
