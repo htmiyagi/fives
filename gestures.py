@@ -59,8 +59,8 @@ def finger_extended(points, tip: int, pip: int, factor: float = 1.1) -> bool:
     return distance(points[WRIST], points[tip]) > distance(points[WRIST], points[pip]) * factor
 
 
-def scroll_pose(points, factor: float = 1.1) -> bool:
-    """Index and middle fingers up, ring and pinky curled."""
+def two_finger_pose(points, factor: float = 1.1) -> bool:
+    """✌️ Index and middle fingers out, ring and pinky curled. Used to point at (and lock on to) FIVES windows."""
     return (finger_extended(points, INDEX_TIP, INDEX_PIP, factor)
             and finger_extended(points, MIDDLE_TIP, MIDDLE_PIP, factor)
             and not finger_extended(points, RING_TIP, RING_PIP, factor)
@@ -74,6 +74,41 @@ def open_palm(points, factor: float = 1.2) -> bool:
     return (all(finger_extended(points, tip, pip, factor) for tip, pip in fingers)
             and finger_extended(points, THUMB_TIP, THUMB_IP, 1.0 + (factor - 1.0) / 2)
             and pinch_ratio(points) > 0.6)
+
+
+
+class LockOn:
+    """Which FIVES window you're aiming at, made "sticky" so its glow doesn't flicker.
+
+    Feed it every frame with update(t, seen), where `seen` is the window under your aim right now (or None).
+    It locks on at once. But it only lets go, or switches to another window, after your aim has been
+    somewhere else for `hold` seconds in a row, so a shaky hand or one lost frame changes nothing.
+    """
+
+    def __init__(self, hold: float = 0.3):
+        self.hold = hold
+        self.target = None        # the window we're locked on to (None = nothing)
+        self._drifting = False    # True while the aim is somewhere other than the target...
+        self._other = None        # ...where it is (a window, or None = empty space)...
+        self._since = 0.0         # ...and since when
+
+    def update(self, t: float, seen):
+        """Returns the locked window (or None)."""
+        if seen == self.target:                    # still on target: forget any drifting
+            self._drifting = False
+        elif self.target is None:                  # nothing locked yet: lock on right away
+            self.target, self._drifting = seen, False
+        else:
+            # (a separate flag, because "aiming at empty space" is None too and must still start the clock)
+            if not self._drifting or seen != self._other:   # started looking somewhere new: start the clock
+                self._drifting, self._other, self._since = True, seen, t
+            if t - self._since >= self.hold:       # been away long enough: follow it
+                self.target, self._drifting = seen, False
+        return self.target
+
+    def release(self) -> None:
+        """Let go right away (for example, the window was just swiped away)."""
+        self.target, self._drifting = None, False
 
 
 class FlickDetector:

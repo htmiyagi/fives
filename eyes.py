@@ -683,6 +683,22 @@ def main() -> None:
     flick = None
     swiped_sketch = False                       # the sketch window was just swiped away: leave draw mode too
 
+    lock = g.LockOn(config.POINT_LOCK_HOLD) if getattr(config, "POINT_LOCK", False) else None
+    glowing = [None]                            # the window lit up right now (a list so aim_at can change it)
+    window_names = {id(link): name for name, link in (("music", panel), ("sketch", sketch)) if link is not None}
+
+    def aim_at(target):
+        """Light up the window we're locked on to, and turn off the one before. Only sends on a change."""
+        if target is glowing[0]:
+            return
+        if glowing[0] is not None:
+            glowing[0].send("glow 0")
+        if target is not None:
+            target.send("glow 1")
+        if getattr(config, "POINT_DEBUG", False):
+            print(f"locked on: {window_names.get(id(target))}" if target is not None else "lock released")
+        glowing[0] = target
+
     def window_under(pt):
         """Which FIVES window the cursor is over (one that reports where it is), or None."""
         if pt is None:
@@ -917,9 +933,15 @@ def main() -> None:
                 ratio = g.pinch_ratio(points)           # thumb <-> index gap
                 last_gap[0] = ratio
                 palm_flat = False                       # open hand: freeze the cursor, listen for a flick
+                locked = None
+                if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
+                    pointing = g.two_finger_pose(points, config.POINT_FACTOR)
+                    locked = lock.update(t, window_under(last_sent) if pointing else None)
+                    aim_at(locked)
                 if flick is not None:
                     # (in key draw mode only the pen key matters: with it up you can still swipe a window away)
-                    busy = (engine.state != "idle" or pinch.pinched or scroll_mode or draw_mode
+                    busy = (locked is not None          # locked on to a window: the wheel swipe is paused
+                            or engine.state != "idle" or pinch.pinched or scroll_mode or draw_mode
                             or (key_draw and (keypen.down or pen_key.down or gripping
                                               or (snap_key is not None and snap_key.down))))
                     direction = None if busy else flick.update(t, points)
@@ -1137,6 +1159,8 @@ def main() -> None:
                     draw_reticle(frame, (int(aim[0] * w), int(aim[1] * h)), state, progress)
                 status = (state or "tracking") + f"   idx {ratio:.2f}  mid {mid_ratio:.2f}"
             else:
+                if lock is not None:
+                    aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
                 if flick is not None:
                     flick.miss(stamp)                   # a blurry fast swipe can lose the hand for a frame or two
                 smooth.reset()

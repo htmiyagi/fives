@@ -254,6 +254,13 @@ FLICK_SECONDS = 0.45
 FLICK_PALM_FACTOR = 1.15
 FLICK_DEBUG = True
 FLICK_DISTANCE = 0.7
+
+# --- Two-finger point: aim index + middle (✌️) at a FIVES window to lock on to it (it glows) ---
+# While locked on, the palm swipe for the wheel is paused, so the two can't get mixed up.
+POINT_LOCK = True
+POINT_FACTOR = 1.1             # how straight index + middle must be (and ring + pinky curled). 1.05 = easy, 1.25 = strict
+POINT_LOCK_HOLD = 0.3          # seconds your aim must stay off a window before the lock moves or lets go (stops flicker)
+POINT_DEBUG = True             # print "locked on: music" / "lock released" in Terminal
 # HOLD TO SNAP (like Apple Pencil) - in draw mode, draw a shape and HOLD STILL at the end.
 # FIVES undoes your wobbly stroke in the app (Cmd+Z) and redraws it clean: straight line,
 # circle, ellipse, triangle, rectangle or square. Other strokes get smoothed. The app needs a working undo.
