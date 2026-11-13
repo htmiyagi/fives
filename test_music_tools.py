@@ -32,6 +32,9 @@ class FakeSpotify(unittest.TestCase):
                         "/me/player": {"is_playing": True}}      # after play, the servers say it's playing
         self.songs = {"get lucky": GET_LUCKY}            # what the fake search can find
         self.fail_next_play_with = None                  # set to 404 to pretend no device is awake
+        patcher = mock.patch("music_tools._rex_list_found", None)    # each test starts without Rex's playlist
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.settings = dict(settings.DEFAULTS)          # pretend Settings, so your real settings.json is never read
         patcher = mock.patch("music_tools.settings.get", lambda key: self.settings[key])
         patcher.start()
@@ -73,10 +76,49 @@ class FakeSpotify(unittest.TestCase):
 
 
 class PlayMusicTests(FakeSpotify):
-    def test_plays_a_song_by_its_uri(self):
+    def test_a_song_plays_from_rex_list_so_back_works(self):   # real bug: a lone song can't go back
         reply = music_tools.play_music("Get Lucky", "song")
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
-        self.assertEqual(self.sent, [("PUT", "/me/player/play", {"uris": ["spotify:track:lucky"]}, {})])
+        self.assertIn(("POST", "/me/playlists", {"name": "Rex", "public": False,
+                                                  "description": music_tools.REX_LIST_ABOUT}, {}), self.sent)
+        self.assertIn(("POST", "/playlists/new1/items", {"uris": ["spotify:track:lucky"]}, {}), self.sent)
+        self.assertEqual(self.sent[-1], ("PUT", "/me/player/play", {"context_uri": "spotify:playlist:new1",
+                                                                     "offset": {"uri": "spotify:track:lucky"}}, {}))
+
+    def test_rex_list_turns_shuffle_and_repeat_off(self):   # or a shuffled Rex list plays random old songs
+        music_tools.play_music("Get Lucky")
+        self.assertIn(("PUT", "/me/player/shuffle", None, {"state": "false"}), self.sent)
+        self.assertIn(("PUT", "/me/player/repeat", None, {"state": "off"}), self.sent)
+
+    def test_a_song_already_in_rex_list_moves_to_the_end(self):   # never twice: back must find the one before
+        music_tools.play_music("Get Lucky")
+        paths = [(method, path) for method, path, _, _ in self.sent if path == "/playlists/new1/items"]
+        self.assertEqual(paths, [("DELETE", "/playlists/new1/items"), ("POST", "/playlists/new1/items")])
+
+    def test_existing_rex_list_is_used_not_made_again(self):
+        self.answers["/me/playlists"] = {"items": [GYM, {"id": "rex1", "uri": "spotify:playlist:rex1",
+                                                         "name": "Rex", "owner": {"id": "me"}}], "next": None}
+        self.answers["/me"] = {"id": "me"}
+        music_tools.play_music("Get Lucky")
+        self.assertNotIn("/me/playlists", [path for _, path, _, _ in self.sent])
+        self.assertEqual(self.sent[-1][2]["context_uri"], "spotify:playlist:rex1")
+
+    def test_rex_list_keeps_only_the_newest_songs(self):
+        old = [{"item": {"uri": f"spotify:track:old{n}"}} for n in range(2)]
+        self.answers["/playlists/new1/items"] = {"total": music_tools.REX_LIST_MAX + 2, "items": old}
+        music_tools.play_music("Get Lucky")
+        self.assertIn(("DELETE", "/playlists/new1/items",
+                       {"items": [{"uri": "spotify:track:old0"}, {"uri": "spotify:track:old1"}]}, {}), self.sent)
+
+    def test_rex_list_trouble_still_plays_the_song_the_old_way(self):
+        def list_broken(method, path, body=None, **params):
+            if path.startswith("/playlists/"):
+                raise SpotifyError("server hiccup", 500)
+            return self.fake_call(method, path, body, **params)
+        with mock.patch("spotify_connect.call", list_broken):
+            reply = music_tools.play_music("Get Lucky")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.sent[-1][2], {"uris": ["spotify:track:lucky"]})
 
     def test_my_playlist_is_found_by_a_close_name_and_shuffled_first(self):
         reply = music_tools.play_music("chil", "playlist", shuffle=True)
@@ -266,7 +308,7 @@ class WhichDeviceTests(FakeSpotify):
         with mock.patch("spotify_connect.get", side_effect=SpotifyError("down", 500)):
             self.assertEqual(music_tools.playlist_note(), "")
 
-    def test_a_song_goes_straight_to_the_app(self):   # the bug: the servers' song-play said OK and stopped the music
+    def test_a_song_falls_back_to_the_app(self):   # the bug: the servers' song-play said OK and stopped the music
         self.app = {"state": "playing", "title": "Imagine", "artist": "John Lennon"}
         def app_hears(command):
             self.told.append(command)
@@ -275,8 +317,7 @@ class WhichDeviceTests(FakeSpotify):
         with mock.patch("spotify._tell", app_hears):
             reply = music_tools.play_music("Get Lucky", "song")
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
-        self.assertEqual(self.told, ['play track "spotify:track:lucky"'])
-        self.assertNotIn("/me/player/play", [path for _, path, _, _ in self.sent])     # servers never asked
+        self.assertEqual(self.told, ['play track "spotify:track:lucky"'])   # Rex's list didn't start, the app did
 
     def test_a_playlist_the_servers_ignore_gets_pressed_in_the_app(self):
         self.app = {"state": "stopped"}                  # the servers say OK, nothing happens

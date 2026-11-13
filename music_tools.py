@@ -55,6 +55,10 @@ ALEXA_WORDS = {"alexa", "echo", "echo dot"}   # what people call an Amazon speak
 SPEAKER_WORDS = {"speaker", "device"}          # said around a device's name ("the kitchen speaker")
 COMPUTER_WORDS = {"computer", "mac", "macbook", "imac", "laptop", "desktop", "here"}   # any of these = this Mac
 SPOTIFY_BUNDLE_ID = "com.spotify.client"     # macOS's ID for the Spotify app
+REX_LIST_NAME = "Rex"       # Rex's private playlist: single songs play FROM it so "go back" works
+REX_LIST_ABOUT = "Songs Rex played, so going back works. FIVES keeps it short."
+REX_LIST_MAX = 50           # keep only the last this-many songs in it
+_rex_list_found = None      # Rex's playlist once we've found or made it (so we only look once)
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
 WORD_CUTOFF = 0.75          # how alike two words must be to count as the same word ("blak" ~ "black")
@@ -460,14 +464,75 @@ def _started(item: dict, before: dict) -> bool:
 def _press_play(item: dict, shuffle: bool | None) -> bool:
     """Start the music, and make sure it really started. True if it's playing.
 
-    Songs go straight to the Spotify app on this Mac (AppleScript): the servers' "play this one song" says OK but
-    STOPS the music (tested Nov 2026, every time). Playlists, albums and artists go through the servers, which
-    start on a properly shuffled song; if that doesn't take, the app gets pressed directly."""
+    Songs play FROM Rex's own playlist (see _play_from_rex_list), so going back works. If that fails they go
+    straight to the Spotify app (AppleScript): the servers' "play this one song" says OK but STOPS the music
+    (tested Nov 2026, every time). Playlists, albums and artists go through the servers, which start on a
+    properly shuffled song; if that doesn't take, the app gets pressed directly."""
+    if item.get("type") == "track" and _play_from_rex_list(item):
+        return True
     if item.get("type") == "track" and spotify.is_running():
         return _play_in_app(item)
     before = spotify.status() if spotify.is_running() else {}
     _on_a_device(lambda device_id: _start(item, shuffle, device_id))
     return _wait_for(lambda: _started(item, before)) or _play_in_app(item)
+
+
+# ---- Rex's song list: why "go back" works ----------------------------------------------------------------
+# A song played on its own has NO list behind it, so Spotify turns "previous" off (it says so: skipping_prev).
+# You never notice in daily life because you always tap songs inside something (a playlist, an album, search).
+# So Rex does the same: every song it plays goes at the end of a private "Rex" playlist and plays FROM there.
+#     "play A", "play B"  ->  Rex playlist: [A][▶ B]  ->  ⏮⏮ (FIVES, the app, your phone) goes back to A
+def _play_from_rex_list(song: dict) -> bool:
+    """Play one song from Rex's playlist. True if it really started; False means use the old way instead."""
+    try:
+        rex = _add_to_rex_list(song)
+        before = spotify.status() if spotify.is_running() else {}
+        _on_a_device(lambda device_id: _start_rex_list(rex, song, device_id))
+    except SpotifyError as err:
+        if err.status in (401, 403):                # account problems (signed out, no Premium): tell the user
+            raise
+        return False                                # anything else: Rex's list is a nice-to-have, use the old way
+    return _wait_for(lambda: _started(song, before))
+
+
+def _rex_list() -> dict:
+    """Rex's private playlist, found in your library (or made the first time). Remembered after that."""
+    global _rex_list_found
+    if _rex_list_found is None:
+        mine = [p for p in _my_playlists() if p.get("name") == REX_LIST_NAME and _is_mine(p)]
+        _rex_list_found = mine[0] if mine else spotify_connect.call(
+            "POST", "/me/playlists", {"name": REX_LIST_NAME, "public": False, "description": REX_LIST_ABOUT})
+    return _rex_list_found
+
+
+def _add_to_rex_list(song: dict) -> dict:
+    """Put the song at the END of Rex's list and keep the list short. Returns the playlist."""
+    rex = _rex_list()
+    path = f"/playlists/{rex['id']}/items"
+    # Take it out first, so it's never in there twice: "back" has to land on the song played BEFORE this one
+    spotify_connect.call("DELETE", path, {"items": [{"uri": song["uri"]}]})
+    spotify_connect.call("POST", path, {"uris": [song["uri"]]})
+    total = spotify_connect.get(path, limit=1).get("total") or 0
+    if total > REX_LIST_MAX:                        # drop the oldest songs off the front
+        oldest = spotify_connect.get(path, limit=min(total - REX_LIST_MAX, 50)).get("items") or []
+        uris = [entry["item"]["uri"] for entry in oldest if entry.get("item")]
+        if uris:
+            spotify_connect.call("DELETE", path, {"items": [{"uri": uri} for uri in uris]})
+    return rex
+
+
+def _start_rex_list(rex: dict, song: dict, device_id: str | None) -> None:
+    """Shuffle and repeat off (they're player-wide switches, and a shuffled Rex list would play random old
+    songs), then play the playlist starting AT this song."""
+    for setting, off in (("shuffle", "false"), ("repeat", "off")):
+        try:
+            spotify_connect.call("PUT", f"/me/player/{setting}", **_with_device({"state": off}, device_id))
+        except SpotifyError as err:
+            if err.status != 403:                   # 403 "Restriction violated": play anyway (see _start)
+                raise
+    rex_uri = rex.get("uri") or f"spotify:playlist:{rex['id']}"
+    body = {"context_uri": rex_uri, "offset": {"uri": song["uri"]}}
+    spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
 
 
 def _play_in_app(item: dict) -> bool:
