@@ -40,6 +40,7 @@ import eyes_link
 import gestures as g
 import hotkey
 import gesture_recorder
+import score_gestures
 import hud as hud_mod
 import settings
 import wheel_logic
@@ -730,6 +731,8 @@ def main() -> None:
     point_flick = (g.FlickDetector(config.POINT_FLICK_DISTANCE, config.FLICK_SECONDS, config.POINT_FLICK_COOLDOWN,
                                    pose=lambda pts: g.two_finger_pose(pts, config.POINT_FACTOR))
                    if lock is not None else None)
+    # The new finger flick, WATCH-ONLY for now: it prints what it sees so you can tune it, but does nothing yet.
+    finger_flick = score_gestures.make_finger_flick() if getattr(config, "FINGER_FLICK_DEBUG", False) else None
     undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 
@@ -997,6 +1000,14 @@ def main() -> None:
                 ratio = g.pinch_ratio(points)           # thumb <-> index gap
                 last_gap[0] = ratio
                 palm_flat = False                       # open hand: freeze the cursor, listen for a flick
+                if finger_flick is not None:            # watch-only: print attempts, act on nothing
+                    seen = finger_flick.update(t, points)
+                    if finger_flick.last_attempt and finger_flick.last_attempt[0] >= 0.4 * config.FINGER_FLICK_SPEED:
+                        print(g.finger_flick_report(finger_flick.last_attempt, config.FINGER_FLICK_SPEED,
+                                                    config.FINGER_FLICK_PALM_MAX))
+                    finger_flick.last_attempt = None
+                    if seen:
+                        print(f"finger flick {seen.upper()} (watch-only: not wired to anything yet)")
                 locked = None
                 if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
@@ -1240,6 +1251,8 @@ def main() -> None:
                 status = (state or "tracking") + f"   idx {ratio:.2f}  mid {mid_ratio:.2f}"
             else:
                 recorder.add(stamp)                     # no hand this frame
+                if finger_flick is not None:
+                    finger_flick.miss(stamp)
                 if lock is not None:
                     aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
                     point_flick.miss(stamp)

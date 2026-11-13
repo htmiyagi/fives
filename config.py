@@ -270,6 +270,18 @@ POINT_SWIPE_GRACE = 0.5        # a ✌️ swipe still counts for a window you le
 # "flick": ONE real attempt per recording (tap, flick once, tap). "not": normal hand use that must NOT
 # trigger it (typing, pointing, reaching, waving), any length. Score them with: python score_gestures.py
 RECORD_KEYS = {"flick": ["ctrl", "alt", "f"], "not": ["ctrl", "alt", "n"]}
+
+# --- Finger flick: from a ✌️ point, snap index + middle sideways while the PALM stays still ---
+# Speeds are in hand sizes per second (so near / far from the camera doesn't matter). Tune with:
+#   python score_gestures.py finger-flick       (and watch the "finger flick reached" lines live)
+FINGER_FLICK_SPEED = 6.0       # how fast the fingertips must move RELATIVE to the palm. Lower = more sensitive, more accidents
+FINGER_FLICK_PALM_MAX = 2.0    # the palm must move slower than this. Lower = stricter (whole-hand swipes never count); raise if your palm moves when you flick
+FINGER_FLICK_SECONDS = 0.15    # speed is measured over this window, and the flick must start this soon after the ✌️. Raise for slower flicks
+FINGER_FLICK_ARM_FRAMES = 3    # hold ✌️ this many frames before a flick counts. Raise = fewer accidents, lower = quicker
+FINGER_FLICK_SIDEWAYS = 1.0    # sideways must be at least this many times the up/down motion. Raise = only clean left/right flicks
+FINGER_FLICK_GRACE = 0.08      # forgive lost or blurry frames up to this long mid-flick (about 2 frames at 30 fps)
+FINGER_FLICK_COOLDOWN = 0.4    # seconds after a flick before the next can happen
+FINGER_FLICK_DEBUG = True      # print each attempt's peak speed vs the threshold (and the palm speed) in Terminal
 POINT_UNDO_SECONDS = 1.0       # after swiping a window away, swipe the other way within this long to bring it back
 # HOLD TO SNAP (like Apple Pencil) - in draw mode, draw a shape and HOLD STILL at the end.
 # FIVES undoes your wobbly stroke in the app (Cmd+Z) and redraws it clean: straight line,
