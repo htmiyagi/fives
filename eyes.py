@@ -699,6 +699,35 @@ def main() -> None:
             print(f"locked on: {window_names.get(id(target))}" if target is not None else "lock released")
         glowing[0] = target
 
+    # ✌️ swipe while locked on = put that window away. Its own short cooldown, or it would block the undo swipe.
+    point_flick = (g.FlickDetector(config.FLICK_DISTANCE, config.FLICK_SECONDS, config.POINT_FLICK_COOLDOWN,
+                                   pose=lambda pts: g.two_finger_pose(pts, config.POINT_FACTOR))
+                   if lock is not None else None)
+    undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
+    restore = []        # windows to bring back next frame (the same path as clicking their wedge)
+
+    def put_away(swipe):
+        """✌️ swipe while locked on: hide that window and open the undo second. Returns its name."""
+        name = window_names.get(id(lock.target))
+        lock.release()
+        aim_at(None)                                    # stop glowing first, so it comes back un-lit
+        print(f"✌️ swipe {swipe}: {actions.run('hide_window', window=name)}"
+              f"  (swipe back within {config.POINT_UNDO_SECONDS:g} s to undo)")
+        return name
+
+    def undoing(t):
+        """Are we inside the undo second? (The wheel swipe stays paused during it.)"""
+        return undo is not None and t < undo[2]
+
+    def take_back(swipe):
+        """A swipe during the undo second. The opposite way brings the window back. True if it did."""
+        name, first, _ = undo
+        if swipe == first:
+            return False                                # same way again: ignore it
+        restore.append(name)
+        print(f"swipe {swipe}: undo, bringing {name} back")
+        return True
+
     def window_under(pt):
         """Which FIVES window the cursor is over (one that reports where it is), or None."""
         if pt is None:
@@ -878,12 +907,13 @@ def main() -> None:
                     pinch.pinched = False
                     pinch.armed = False
             wants_draw = False                  # the wheel's SKETCH wedge turns draw mode on, like the draw key
-            picks = (wheel.take_picks() if wheel is not None else []) + wedge_key_picks()   # clicks + Option+number
+            picks = (wheel.take_picks() if wheel is not None else []) + wedge_key_picks() + restore  # clicks, keys, undo
+            restore = []
             for picked in picks:
                 if picked == "sketch" and toggle is not None and cursor_on:
                     wants_draw = wants_draw or not key_draw
                 else:
-                    print(f"wheel: {actions.run('open_window', window=picked)}")
+                    print(actions.run('open_window', window=picked))
             if toggle is not None and (toggle.consume_tap() or wants_draw) and cursor_on:
                 if mouse is None:
                     mouse = Mouse()
@@ -938,6 +968,15 @@ def main() -> None:
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
                     locked = lock.update(t, window_under(last_sent) if pointing else None)
                     aim_at(locked)
+                    swipe = point_flick.update(t, points)
+                    if swipe and undoing(t):
+                        if take_back(swipe):
+                            undo = None
+                    elif swipe and lock.target is not None:
+                        name = put_away(swipe)
+                        undo = (name, swipe, t + config.POINT_UNDO_SECONDS)
+                        swiped_sketch = swiped_sketch or name == "sketch"           # leave draw mode too
+                        flash_text, flash_until = f"{name.upper()} PUT AWAY", time.monotonic() + 1.0
                 if flick is not None:
                     # (in key draw mode only the pen key matters: with it up you can still swipe a window away)
                     busy = (locked is not None          # locked on to a window: the wheel swipe is paused
@@ -953,7 +992,10 @@ def main() -> None:
                                   + ("" if flick.last_best >= config.FLICK_DISTANCE else "  (swipe farther or faster, or lower FLICK_DISTANCE)"))
                         flick.last_best = 0.0
                     palm_flat = flick.is_open and config.FLICK_FREEZE_CURSOR
-                    if direction:
+                    if direction and undoing(t):          # palm swipe in the undo second: only undo counts
+                        if take_back(direction):
+                            undo = None
+                    elif direction:
                         on = "sketch" if sketch is not None and window_under(last_sent) is sketch else None
                         name = actions.action_for(f"flick_{direction}", on)     # the GESTURES table in actions.py
                         if name:
@@ -1161,6 +1203,7 @@ def main() -> None:
             else:
                 if lock is not None:
                     aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
+                    point_flick.miss(stamp)
                 if flick is not None:
                     flick.miss(stamp)                   # a blurry fast swipe can lose the hand for a frame or two
                 smooth.reset()

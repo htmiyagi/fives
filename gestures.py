@@ -112,7 +112,7 @@ class LockOn:
 
 
 class FlickDetector:
-    """Spots a quick sideways swipe of an open hand.
+    """Spots a quick sideways swipe of an open hand (or of another hand shape: pass `pose`).
 
     Feed it every frame with update() (and miss() on frames with no hand). It answers "left", "right"
     or None, where left / right are the way you moved your hand (the picture is mirrored, like a mirror).
@@ -125,9 +125,11 @@ class FlickDetector:
     frame or two. We forgive gaps shorter than `grace` seconds instead of starting over.
     """
 
-    def __init__(self, distance=1.2, seconds=0.45, cooldown=1.0, sideways=0.7, palm_factor=1.15, grace=0.2):
+    def __init__(self, distance=1.2, seconds=0.45, cooldown=1.0, sideways=0.7, palm_factor=1.15, grace=0.2,
+                 pose=None):
         self.distance, self.seconds, self.cooldown = distance, seconds, cooldown
         self.sideways, self.palm_factor, self.grace = sideways, palm_factor, grace
+        self.pose = pose              # which hand shape counts (a function of the points); None = open palm
         self.trail = deque()          # (time, x, y, hand size) while the palm is open
         self.last_flick = -1e9
         self.last_open = -1e9         # when we last saw an open palm
@@ -151,7 +153,8 @@ class FlickDetector:
             self.reset()
 
     def update(self, t: float, points):
-        if not open_palm(points, self.palm_factor):
+        right_shape = self.pose(points) if self.pose else open_palm(points, self.palm_factor)
+        if not right_shape:
             self.miss(t)
             return None
         self.last_open = t
