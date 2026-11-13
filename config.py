@@ -269,7 +269,7 @@ POINT_SWIPE_GRACE = 0.5        # a ✌️ swipe still counts for a window you le
 # Tap a combo to start recording with that label, tap it again to stop and save. Works from any app.
 # "flick": ONE real attempt per recording (tap, flick once, tap). "not": normal hand use that must NOT
 # trigger it (typing, pointing, reaching, waving), any length. Score them with: python score_gestures.py
-RECORD_KEYS = {"flick": ["ctrl", "alt", "f"], "not": ["ctrl", "alt", "n"]}
+RECORD_KEYS = {"flick": ["ctrl", "alt", "f"], "not": ["ctrl", "alt", "n"], "spin": ["ctrl", "alt", "s"]}
 
 # --- Finger flick: from a ✌️ point, snap index + middle sideways while the PALM stays still ---
 # Speeds are in hand sizes per second (so near / far from the camera doesn't matter). Tune with:
@@ -293,6 +293,9 @@ SPIN_ROUNDNESS = 0.4           # circle's box: short side ÷ long side (1 = perf
 SPIN_COOLDOWN = 1.0            # seconds after a spin before the next can happen
 SPIN_GRACE = 0.1               # forgive a lost or blurry frame mid-spin up to this long
 SPIN_DEBUG = True              # print each attempt's turn vs the threshold, and why it didn't fire
+SPIN_METHOD = "center"         # how turning is measured: "center" (round the path's middle) or "heading" (how far
+                               # the motion direction turns; no middle needed). Compare: python score_gestures.py spin-compare
+SPIN_MIN_STEP = 0.02           # "heading" only: moves shorter than this (hand sizes) are noise, no direction. Raise if jitter adds turn
 # HOLD TO SNAP (like Apple Pencil) - in draw mode, draw a shape and HOLD STILL at the end.
 # FIVES undoes your wobbly stroke in the app (Cmd+Z) and redraws it clean: straight line,
 # circle, ellipse, triangle, rectangle or square. Other strokes get smoothed. The app needs a working undo.
