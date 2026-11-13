@@ -19,8 +19,10 @@ INDEX_TIP = 8
 MIDDLE_KNUCKLE = 9
 MIDDLE_PIP = 10
 MIDDLE_TIP = 12
+RING_KNUCKLE = 13
 RING_PIP = 14
 RING_TIP = 16
+PINKY_KNUCKLE = 17
 PINKY_PIP = 18
 PINKY_TIP = 20
 
@@ -33,6 +35,37 @@ def distance(a, b) -> float:
 def hand_size(points) -> float:
     """Wrist to middle knuckle. A ruler that grows and shrinks with the hand."""
     return distance(points[WRIST], points[MIDDLE_KNUCKLE]) or 1e-6
+
+
+# ---- speeds, for the finger flick: fingertips moving fast RELATIVE TO a still palm --------------------
+PALM_POINTS = (WRIST, INDEX_KNUCKLE, MIDDLE_KNUCKLE, RING_KNUCKLE, PINKY_KNUCKLE)   # these barely move when fingers flick
+FLICK_TIPS = (INDEX_TIP, MIDDLE_TIP)
+
+
+def average_point(points, which):
+    """The average spot of some landmarks (by index number)."""
+    xs = [points[i][0] for i in which]
+    ys = [points[i][1] for i in which]
+    return sum(xs) / len(xs), sum(ys) / len(ys)
+
+
+def hand_speeds(before, after, dt: float):
+    """How fast the palm moved between two frames, and how fast the index + middle fingertips moved
+    RELATIVE TO THE PALM. Both in hand sizes per second, so near or far from the camera gives the same numbers.
+
+    Returns (palm_vx, palm_vy, rel_vx, rel_vy).   (x grows to the right, y grows DOWN, like the picture.)
+        palm velocity     = palm center moved / time / hand size
+        fingertip velocity = fingertip center moved / time / hand size
+        relative velocity = fingertip velocity - palm velocity   (the part of the motion that's just the fingers)
+    """
+    if dt <= 0:
+        return 0.0, 0.0, 0.0, 0.0
+    size = (hand_size(before) + hand_size(after)) / 2
+    (pbx, pby), (pax, pay) = average_point(before, PALM_POINTS), average_point(after, PALM_POINTS)
+    (fbx, fby), (fax, fay) = average_point(before, FLICK_TIPS), average_point(after, FLICK_TIPS)
+    palm_vx, palm_vy = (pax - pbx) / dt / size, (pay - pby) / dt / size
+    tips_vx, tips_vy = (fax - fbx) / dt / size, (fay - fby) / dt / size
+    return palm_vx, palm_vy, tips_vx - palm_vx, tips_vy - palm_vy
 
 
 def depth_gap(zs, points) -> float:

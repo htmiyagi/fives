@@ -60,7 +60,7 @@ class GestureRecorder:
             return f"'{label}' recording too short ({len(frames)} frames): not saved"
         seconds = frames[-1]["t"]
         fps = (len(frames) - 1) / seconds if seconds > 0 else 0.0
-        path = self.folder / label / f"{self.started}.json"
+        path = unique_path(self.folder / label, self.started)
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps({"label": label, "seconds": seconds, "fps": round(fps, 1),
@@ -69,6 +69,15 @@ class GestureRecorder:
             return f"couldn't save the '{label}' recording: {err}"
         count = len(list(path.parent.glob("*.json")))
         return f"saved '{label}' #{count}: {len(frames)} frames, {seconds:.1f} s, {fps:.0f} fps -> {path.name}"
+
+
+def unique_path(folder, name: str) -> Path:
+    """folder/name.json, or name_2.json, name_3.json... if that's taken (two recordings in the same second)."""
+    path, n = Path(folder) / f"{name}.json", 1
+    while path.exists():
+        n += 1
+        path = Path(folder) / f"{name}_{n}.json"
+    return path
 
 
 def load(path) -> dict:
