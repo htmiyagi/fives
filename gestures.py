@@ -155,12 +155,23 @@ class LockOn:
 
 
 
+# What each "why" code from FingerFlickDetector means, as a tip for the debug line.
+FINGER_FLICK_WHY = {
+    "slow": "flick faster, or lower FINGER_FLICK_SPEED",
+    "palm": "palm moved too much: keep it still, or raise FINGER_FLICK_PALM_MAX",
+    "updown": "too up/down, not sideways: flick flatter, or lower FINGER_FLICK_SIDEWAYS",
+    "cooldown": "still in cooldown after the last flick: wait, or lower FINGER_FLICK_COOLDOWN",
+    "fired": "FIRED",
+}
+
+
 def finger_flick_report(attempt, speed: float, palm_max: float) -> str:
-    """One debug line for a finished attempt: (peak relative speed, palm speed then) vs the thresholds."""
-    peak, palm = attempt
-    why = "" if peak >= speed else "  (flick faster, or lower FINGER_FLICK_SPEED)"
-    if peak >= speed and palm > palm_max:
-        why = "  (palm moved too much: keep it still, or raise FINGER_FLICK_PALM_MAX)"
+    """One debug line for a finished attempt: (peak relative speed, palm speed then[, why code]) vs the thresholds."""
+    peak, palm = attempt[0], attempt[1]
+    code = attempt[2] if len(attempt) > 2 else None
+    if code is None:                                 # old 2-number attempts: work out the speed / palm reason
+        code = "slow" if peak < speed else "palm" if palm > palm_max else None
+    why = f"  ({FINGER_FLICK_WHY[code]})" if code else ""
     return (f"finger flick reached {peak:.1f} of {speed:g} hand-sizes/s"
             f" (palm {palm:.1f}, limit {palm_max:g}){why}")
 
@@ -186,13 +197,25 @@ class FingerFlickDetector:
         self.pointed_at = -1e9        # the last time a held ✌️ was seen (the flick must start soon after)
         self.last_seen = -1e9         # the last frame with a hand
         self.last_flick = -1e9
-        self.peak = (0.0, 0.0)        # this attempt's fastest relative speed, and the palm speed at that moment
+        self.peak = (0.0, 0.0, None)  # this attempt's fastest relative speed, the palm speed then, and why it didn't fire
         self.last_attempt = None      # ...the attempt that just ended (for the debug print), or None
 
     def _end_attempt(self) -> None:
         if self.peak[0] > 0:
             self.last_attempt = self.peak
-        self.peak = (0.0, 0.0)
+        self.peak = (0.0, 0.0, None)
+
+    def _why_not(self, rel_speed, palm_speed, rel_vx, rel_vy, t):
+        """The first check this frame fails ("slow", "palm", "updown", "cooldown"), or None if it passes them all."""
+        if rel_speed < self.speed:
+            return "slow"
+        if palm_speed > self.palm_max:
+            return "palm"
+        if abs(rel_vx) < self.sideways * abs(rel_vy):
+            return "updown"
+        if t - self.last_flick < self.cooldown:
+            return "cooldown"
+        return None
 
     def reset(self) -> None:
         self._end_attempt()
@@ -228,10 +251,10 @@ class FingerFlickDetector:
         t0, before = self.recent[0]
         palm_vx, palm_vy, rel_vx, rel_vy = hand_speeds(before, points, t - t0)
         rel_speed, palm_speed = math.hypot(rel_vx, rel_vy), math.hypot(palm_vx, palm_vy)
-        if rel_speed > self.peak[0]:
-            self.peak = (rel_speed, palm_speed)
-        if (rel_speed >= self.speed and palm_speed <= self.palm_max
-                and abs(rel_vx) >= self.sideways * abs(rel_vy) and t - self.last_flick >= self.cooldown):
+        why = self._why_not(rel_speed, palm_speed, rel_vx, rel_vy, t)
+        if rel_speed > self.peak[0] or why is None:     # the frame that fires always wins the report
+            self.peak = (rel_speed, palm_speed, why or "fired")
+        if why is None:
             self.last_flick = t
             self.reset()                                 # disarm: ✌️ again for the next one
             return "right" if rel_vx > 0 else "left"
