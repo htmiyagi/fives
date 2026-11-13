@@ -60,6 +60,15 @@ class Recording(unittest.TestCase):
         self.assertIn("saved 'flick'", said)
         self.assertEqual(self.rec.label, "not")
 
+    def test_two_recordings_in_the_same_second_both_survive(self):
+        for _ in range(2):
+            self.rec.toggle("flick")
+            self.rec.started = "same-second"               # force the same file name
+            for i in range(4):
+                self.rec.add(i * 0.05, HAND, DEPTH)
+            self.rec.toggle("flick")
+        self.assertEqual(len(self.saved("flick")), 2)
+
     def test_stop_when_idle_says_so(self):
         self.assertEqual(self.rec.stop(), "not recording")
 
