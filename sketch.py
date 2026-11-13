@@ -42,6 +42,7 @@ def setting(name, default):
 # ---- look (tweak freely) ---------------------------------------------------------------------------
 BG_ALPHA = 0.88            # how dark the window is. Lower = see more of what's behind it (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off
+HOVER_GLOW = 1.4           # glow multiplier while the cursor is just over the window (1 = no change)
 TARGETED_GLOW = 2.0        # glow multiplier while you point at the window with two fingers (1 = no change)
 TARGET_BAND = 12           # ...plus a band of light this wide along the edge (0 = none)
 TARGET_BAND_ALPHA = 0.7    # ...this bright (0 = invisible, 1 = solid)
@@ -79,7 +80,8 @@ class State:
     hover = None
     flash = ("", 0.0)
     scale = 1.0                # window width / design width
-    boost = 1.0                # glow multiplier: TARGETED_GLOW while eyes.py says you're pointing at us
+    boost = 1.0                # glow multiplier: HOVER_GLOW / TARGETED_GLOW, set by eyes.py
+    locked = False             # True while you ✌️ point at us (adds the band of light)
     images = {}                # drawn page pictures: (version, page, px) -> NSImage
     opening = False
     visible = False
@@ -529,7 +531,7 @@ def main() -> None:
             line(k[0], k[1], k[0] + 40 * k[2], k[1], WHITE, 1.6, 0.7)
             line(k[0], k[1], k[0], k[1] + 40 * k[3], WHITE, 1.6, 0.7)
         poly(shape_points(), stroke=BLUE, width=1.5, stroke_alpha=0.85, glow=8)
-        if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
+        if S.locked:                                              # ✌️ pointed at: a soft band of light along the edge
             poly(shape_points(), stroke=BLUE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
 
         # --- title
@@ -823,8 +825,10 @@ def main() -> None:
                 AppHelper.callAfter(controller.hide)
             elif word == "snap":
                 S.key_snap = rest.strip() == "1"
-            elif word == "glow":                           # you're pointing at us (1), or not any more (0)
-                S.boost = TARGETED_GLOW if rest.strip() == "1" else 1.0
+            elif word == "glow":                           # 0 = normal, 1 = cursor on us, 2 = ✌️ locked on
+                level = rest.strip()
+                S.locked = level == "2"
+                S.boost = {"1": HOVER_GLOW, "2": TARGETED_GLOW}.get(level, 1.0)
                 AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "penmode":
                 S.pen_mode = rest.strip()
