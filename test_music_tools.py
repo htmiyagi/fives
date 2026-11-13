@@ -200,6 +200,27 @@ class WhichDeviceTests(FakeSpotify):
         other = {"id": "imac", "name": "Hoyu's iMac", "type": "Computer", "is_active": False}
         self.assertEqual(music_tools._named_device([MAC, other], "hoyu's imac"), other)
 
+    def echo_jumps_to_wham(self):
+        """Pretend the Echo Dot refused the song and skipped to the next one in the queue (what really happened)."""
+        self.app = {"state": "playing", "title": "Last Christmas"}   # the Mac app is a remote, showing the Echo
+        self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        self.answers["/me/player"] = {"is_playing": True, "device": ECHO,
+                                      "item": {"uri": "spotify:track:wham", "name": "Last Christmas"}}
+
+    def test_speaker_refusing_a_song_says_so_and_pauses_what_snuck_in(self):
+        self.echo_jumps_to_wham()
+        reply = music_tools.play_music("Get Lucky", speaker="my echo dot")
+        self.assertEqual(reply, "Hiyu's Echo Dot can't play Get Lucky by Daft Punk: Spotify won't allow that song "
+                                "there. Want it on this Mac instead?")
+        self.assertIn(("PUT", "/me/player/pause", None, {}), self.sent)
+
+    def test_on_the_mac_the_old_message_stays(self):
+        self.echo_jumps_to_wham()
+        self.answers["/me/player"]["device"] = MAC
+        reply = music_tools.play_music("Get Lucky")
+        self.assertTrue(reply.startswith("Spotify said yes to Get Lucky"), reply)
+        self.assertNotIn(("PUT", "/me/player/pause", None, {}), self.sent)
+
     def test_unknown_speaker_says_what_spotify_can_see(self):
         self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
         reply = music_tools.play_music("Get Lucky", speaker="bathroom")
