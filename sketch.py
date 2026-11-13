@@ -22,6 +22,7 @@ pressed while recording (eyes.py then throws away that attempt). eyes.py sends "
 """
 
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -42,9 +43,14 @@ def setting(name, default):
 # ---- look (tweak freely) ---------------------------------------------------------------------------
 BG_ALPHA = 0.88            # how dark the window is. Lower = see more of what's behind it (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off
+HOVER_GLOW = 2.0           # glow multiplier while the cursor is over the window (1 = no change)
+HOVER_PASSES = 3           # ...and the edge glow is drawn this many extra times on top (more = brighter, 0 = none)
 TARGETED_GLOW = 2.0        # glow multiplier while you point at the window with two fingers (1 = no change)
 TARGET_BAND = 12           # ...plus a band of light this wide along the edge (0 = none)
-TARGET_BAND_ALPHA = 0.7    # ...this bright (0 = invisible, 1 = solid)
+TARGET_BAND_ALPHA = 0.22   # ...this solid. Low = glassy, see-through (0 = invisible, 1 = solid)
+LOCK_PASSES = 4            # ✌️: layers of electric-blue glow on the edge (more = brighter)
+LOCK_FLICKER = 0.35        # ✌️: how much the edge buzzes, like a neon tube (0 = steady, 0.6 = wild)
+ELECTRIC = (0.35, 0.85, 1.0)   # lightning blue, for the ✌️ edge
 FOLDER = setting("SKETCH_FOLDER", "~/Documents/FIVES Notes")
 AUTOSAVE = setting("SKETCH_AUTOSAVE", True)         # save the marked-up copy whenever you put the window away
 CLICK_AWAY = setting("SKETCH_CLICK_AWAY", True)     # click anywhere outside the window = put it away (like a popover)
@@ -79,7 +85,8 @@ class State:
     hover = None
     flash = ("", 0.0)
     scale = 1.0                # window width / design width
-    boost = 1.0                # glow multiplier: TARGETED_GLOW while eyes.py says you're pointing at us
+    boost = 1.0                # glow multiplier: HOVER_GLOW / TARGETED_GLOW, set by eyes.py
+    locked = False             # True while you ✌️ point at us (adds the band of light)
     images = {}                # drawn page pictures: (version, page, px) -> NSImage
     opening = False
     visible = False
@@ -529,8 +536,15 @@ def main() -> None:
             line(k[0], k[1], k[0] + 40 * k[2], k[1], WHITE, 1.6, 0.7)
             line(k[0], k[1], k[0], k[1] + 40 * k[3], WHITE, 1.6, 0.7)
         poly(shape_points(), stroke=BLUE, width=1.5, stroke_alpha=0.85, glow=8)
-        if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
-            poly(shape_points(), stroke=BLUE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
+        if S.boost > 1.0:                                         # cursor on us: stack extra glow on the edge
+            for _ in range(HOVER_PASSES):
+                poly(shape_points(), stroke=BLUE, width=1.5, stroke_alpha=1.0, glow=12)
+        if S.locked:                                              # ✌️ pointed at: a glassy band of light along the edge...
+            poly(shape_points(), stroke=PALE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
+            buzz = random.uniform(1 - LOCK_FLICKER, 1.0)          # ...and a crackling electric edge (new each redraw)
+            for _ in range(LOCK_PASSES):
+                poly(shape_points(), stroke=ELECTRIC, width=2.5, stroke_alpha=buzz, glow=16)
+            poly(shape_points(), stroke=WHITE, width=1.0, stroke_alpha=buzz, glow=4)   # white-hot core line
 
         # --- title
         box((48, 36, 4, 36), fill=BLUE, glow=6)
@@ -798,6 +812,8 @@ def main() -> None:
                     self.view.setNeedsDisplay_(True)
                 elif S.flash[0] and time.monotonic() < S.flash[1] + 0.2:
                     self.view.setNeedsDisplay_(True)
+                elif S.locked and LOCK_FLICKER > 0:             # ✌️ locked on: keep the edge buzzing
+                    self.view.setNeedsDisplay_(True)
             except Exception as e:
                 print("sketch tick error:", e)
 
@@ -823,8 +839,10 @@ def main() -> None:
                 AppHelper.callAfter(controller.hide)
             elif word == "snap":
                 S.key_snap = rest.strip() == "1"
-            elif word == "glow":                           # you're pointing at us (1), or not any more (0)
-                S.boost = TARGETED_GLOW if rest.strip() == "1" else 1.0
+            elif word == "glow":                           # 0 = normal, 1 = cursor on us, 2 = ✌️ locked on
+                level = rest.strip()
+                S.locked = level == "2"
+                S.boost = {"1": HOVER_GLOW, "2": TARGETED_GLOW}.get(level, 1.0)
                 AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "penmode":
                 S.pen_mode = rest.strip()

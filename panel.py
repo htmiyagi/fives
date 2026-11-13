@@ -16,6 +16,7 @@ Spotify itself is controlled by spotify.py (AppleScript). The Spotify app must b
 """
 
 import os
+import random
 import sys
 import threading
 import time
@@ -28,9 +29,14 @@ from panel_logic import CUT, H, MAX_W, MIN_W, W, Layout, clamp_width, ellipsize,
 TINT_ALPHA = 0.36          # how dark the glass is. Lower = see more of Chrome behind it (0.2 to 0.8)
 TEXT_ALPHA = 0.80          # how solid the writing is. Lower = more see-through hologram (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off, 1 = normal, 1.6 = very bright
+HOVER_GLOW = 2.0           # glow multiplier while the cursor is over the window (1 = no change)
+HOVER_PASSES = 3           # ...and the edge glow is drawn this many extra times on top (more = brighter, 0 = none)
 TARGETED_GLOW = 2.0        # glow multiplier while you point at the window with two fingers (1 = no change)
 TARGET_BAND = 12           # ...plus a band of light this wide along the edge (0 = none)
-TARGET_BAND_ALPHA = 0.7    # ...this bright (0 = invisible, 1 = solid)
+TARGET_BAND_ALPHA = 0.22   # ...this solid. Low = glassy, see-through (0 = invisible, 1 = solid)
+LOCK_PASSES = 4            # ✌️: layers of electric-blue glow on the edge (more = brighter)
+LOCK_FLICKER = 0.35        # ✌️: how much the edge buzzes, like a neon tube (0 = steady, 0.6 = wild)
+ELECTRIC = (0.35, 0.85, 1.0)   # lightning blue, for the ✌️ edge
 SWEEP = True               # a faint bright line sliding down the window, like a hologram scan
 CLOSE_QUITS_SPOTIFY = True # the CLOSE button also closes the Spotify app (the hotkey only hides the window)
 MARGIN = 24                # distance from the top-right corner of the screen
@@ -51,7 +57,8 @@ class State:
     art_url = ""
     hover = None               # name of the button under the pointer
     scale = 1.0                # window size / design size (glow radius follows it)
-    boost = 1.0                # glow multiplier: TARGETED_GLOW while eyes.py says you're pointing at us
+    boost = 1.0                # glow multiplier: HOVER_GLOW / TARGETED_GLOW, set by eyes.py
+    locked = False             # True while you ✌️ point at us (adds the band of light)
     refresh = threading.Event()
 
 
@@ -382,8 +389,15 @@ def main() -> None:
         # --- frame: neon outer line, thin inner line, white armor edges on two corners
         poly(frame_points(1), stroke=BLUE, width=1.8, stroke_alpha=1.0, glow=9)
         poly(frame_points(6), stroke=BLUE, width=0.8, stroke_alpha=0.5)
-        if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
-            poly(frame_points(1), stroke=BLUE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
+        if S.boost > 1.0:                                         # cursor on us: stack extra glow on the edge
+            for _ in range(HOVER_PASSES):
+                poly(frame_points(1), stroke=BLUE, width=1.8, stroke_alpha=1.0, glow=12)
+        if S.locked:                                              # ✌️ pointed at: a glassy band of light along the edge...
+            poly(frame_points(1), stroke=PALE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
+            buzz = random.uniform(1 - LOCK_FLICKER, 1.0)          # ...and a crackling electric edge (new each redraw)
+            for _ in range(LOCK_PASSES):
+                poly(frame_points(1), stroke=ELECTRIC, width=2.5, stroke_alpha=buzz, glow=16)
+            poly(frame_points(1), stroke=WHITE, width=1.0, stroke_alpha=buzz, glow=4)   # white-hot core line
         c = CUT
         line(c, 1, 1, c, WHITE, 3, 0.95, glow=7)                  # top-left cut edge
         line(W - c, H - 1, W - 1, H - c, WHITE, 3, 0.95, glow=7)  # bottom-right cut edge
@@ -597,8 +611,9 @@ def main() -> None:
                 AppHelper.callAfter(controller.show)
             elif word == "hide":
                 AppHelper.callAfter(controller.hide)
-            elif word in ("glow 1", "glow 0"):             # you're pointing at us (1), or not any more (0)
-                S.boost = TARGETED_GLOW if word == "glow 1" else 1.0
+            elif word in ("glow 0", "glow 1", "glow 2"):   # 0 = normal, 1 = cursor on us, 2 = ✌️ locked on
+                S.locked = word == "glow 2"
+                S.boost = {"glow 1": HOVER_GLOW, "glow 2": TARGETED_GLOW}.get(word, 1.0)
                 AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "quit":
                 break

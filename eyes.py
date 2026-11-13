@@ -712,20 +712,25 @@ def main() -> None:
     swiped_sketch = False                       # the sketch window was just swiped away: leave draw mode too
 
     lock = g.LockOn(config.POINT_LOCK_HOLD) if getattr(config, "POINT_LOCK", False) else None
-    glowing = [None]                            # the window lit up right now (a list so aim_at can change it)
+    # The window lit up right now, and how brightly: 1 = the cursor is on it, 2 = ✌️ locked on to it.
+    # (A list so aim_at can change it.)
+    glowing = [None, 0]
     window_names = {id(link): name for name, link in (("music", panel), ("sketch", sketch)) if link is not None}
 
-    def aim_at(target):
-        """Light up the window we're locked on to, and turn off the one before. Only sends on a change."""
-        if target is glowing[0]:
+    def aim_at(target, level=2):
+        """Light up `target` at `level` (1 = hover, 2 = locked on), and turn off the one before.
+        Only sends when something changed."""
+        level = level if target is not None else 0
+        old_target, old_level = glowing
+        if target is old_target and level == old_level:
             return
-        if glowing[0] is not None:
-            glowing[0].send("glow 0")
+        if old_target is not None and target is not old_target:
+            old_target.send("glow 0")
         if target is not None:
-            target.send("glow 1")
-        if getattr(config, "POINT_DEBUG", False):
-            print(f"locked on: {window_names.get(id(target))}" if target is not None else "lock released")
-        glowing[0] = target
+            target.send(f"glow {level}")
+        if getattr(config, "POINT_DEBUG", False) and (level == 2 or old_level == 2):
+            print(f"locked on: {window_names.get(id(target))}" if level == 2 else "lock released")
+        glowing[0], glowing[1] = target, level
 
     # ✌️ finger flick while locked on = put that window away; a finger flick back = undo (FINGER_FLICK_* in config).
     finger_flick = score_gestures.make_finger_flick() if lock is not None else None
@@ -1008,7 +1013,10 @@ def main() -> None:
                 if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
                     locked = lock.update(t, window_under(last_sent) if pointing else None)
-                    aim_at(locked)
+                    if locked is not None:
+                        aim_at(locked, 2)                   # ✌️ locked on: the big glow
+                    else:
+                        aim_at(window_under(last_sent), 1)  # just the cursor over it: a small glow
                     # (flicking moves the index tip, so the cursor may have just left the window: lock.recent)
                     flicked_at = lock.recent(t, config.POINT_SWIPE_GRACE) if flicked else None
                     if flicked and undoing(t):          # the ONLY way to undo: a finger flick back
