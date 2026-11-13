@@ -166,6 +166,25 @@ class WhichDeviceTests(FakeSpotify):
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
         self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
 
+    def test_on_my_echo_dot_works_like_my_for_playlists(self):
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        music_tools.play_music("Get Lucky", speaker="my echo dot")
+        self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
+
+    def test_speaker_left_in_the_song_name_is_split_off(self):   # Rex forgot to fill in speaker
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        reply = music_tools.play_music("Get Lucky on my Echo Dot")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
+
+    def test_a_song_with_on_in_its_name_stays_whole(self):
+        lean = {**GET_LUCKY, "uri": "spotify:track:lean", "name": "Lean On Me", "artists": [{"name": "Bill Withers"}]}
+        self.songs["lean on me"] = lean
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        reply = music_tools.play_music("Lean On Me")
+        self.assertEqual(reply, "Playing Lean On Me by Bill Withers.")
+        self.assertEqual(self.moves(), [])                # "me" isn't a speaker, so it stays on this Mac
+
     def test_unknown_speaker_says_what_spotify_can_see(self):
         self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
         reply = music_tools.play_music("Get Lucky", speaker="bathroom")

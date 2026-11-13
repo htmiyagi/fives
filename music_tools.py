@@ -52,6 +52,7 @@ CHECK_EVERY = 0.25           # ...this many seconds apart (so we wait at most ~1
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 HIDE_SPOTIFY_SECONDS = 8    # how long after opening Spotify we keep hiding its window (it pops up while loading)
 ALEXA_WORDS = {"alexa", "echo", "echo dot"}   # what people call an Amazon speaker
+SPEAKER_WORDS = {"speaker", "device"}          # said around a device's name ("the kitchen speaker")
 SPOTIFY_BUNDLE_ID = "com.spotify.client"     # macOS's ID for the Spotify app
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
@@ -238,10 +239,23 @@ def _this_mac(devices: list[dict]) -> dict | None:
 
 def _named_device(devices: list[dict], speaker: str) -> dict | None:
     """The device you named ("kitchen", "my phone", "alexa"), or None if nothing matches."""
-    if speaker.lower().strip() in ALEXA_WORDS:      # people say "Alexa", Spotify says "Hiyu's Echo Dot"
-        speaker = "echo"
-    name = best_name_match(speaker, [d.get("name", "") for d in devices])
+    wanted = " ".join(w for w in without_filler(speaker).split() if w.lower() not in SPEAKER_WORDS) or speaker
+    if wanted.lower().strip() in ALEXA_WORDS:       # people say "Alexa", Spotify says "Hiyu's Echo Dot"
+        wanted = "echo"
+    name = best_name_match(wanted, [d.get("name", "") for d in devices])
     return next((d for d in devices if d.get("name") == name), None)
+
+
+def split_speaker(what: str, devices: list[dict]) -> tuple[str, str]:
+    """'jingle bells on my echo dot' -> ('jingle bells', 'my echo dot'). A backup, like says_mine: in case Rex
+    leaves the speaker inside the song name. Only splits if the end is a REAL device, so 'Lean On Me' stays whole."""
+    cut = what.lower().rfind(" on ")                # the LAST " on ", so "Rock On" songs keep their own
+    if cut <= 0:
+        return what, ""
+    song, speaker = what[:cut].strip(), what[cut + len(" on "):].strip()
+    if song and _named_device(devices, speaker):
+        return song, speaker
+    return what, ""
 
 
 def _send_music_to(speaker: str) -> str:
@@ -336,7 +350,7 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
             Leave it empty otherwise, even if you think you know who sings it.
         shuffle: True to shuffle, False to play in order. Leave it out unless the user said which.
         mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
-        speaker: Where to play, ONLY if the user named a device ("on Alexa", "on my phone"). Leave it empty
+        speaker: Where to play, ONLY if the user named a device ("on my echo dot" -> "my echo dot"). Leave it empty
             otherwise: empty plays on this Mac.
     """
     if not spotify_connect.connected():
@@ -345,6 +359,8 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
     if kind not in KINDS:
         return f"I can play a song, album, artist, or playlist, not a '{kind}'."
     try:
+        if not speaker and " on " in what.lower():     # backup: Rex left "on my echo dot" in the song name
+            what, speaker = split_speaker(what, _devices())
         item, everything = _find_my_playlist(what) if kind == "playlist" else (None, [])
         if kind == "playlist" and not item and (mine or says_mine(what)):   # "my" never plays a stranger's playlist
             return f"No playlist called '{without_filler(what)}' in your library. Yours: {_list_names(everything)}."
