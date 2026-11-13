@@ -278,7 +278,7 @@ FINGER_FLICK_SPEED = 3.0       # how fast the fingertips must move RELATIVE to t
 FINGER_FLICK_PALM_MAX = 2.0    # the palm must move slower than this. Lower = stricter (whole-hand swipes never count); raise if your palm moves when you flick
 FINGER_FLICK_SECONDS = 0.15    # speed is measured over this window, and the flick must start this soon after the ✌️. Raise for slower flicks
 FINGER_FLICK_ARM_FRAMES = 3    # hold ✌️ this many frames before a flick counts. Raise = fewer accidents, lower = quicker
-FINGER_FLICK_SIDEWAYS = 1.0    # sideways must be at least this many times the up/down motion. Raise = only clean left/right flicks
+FINGER_FLICK_SIDEWAYS = 0.6    # sideways must be at least this many times the up/down motion (0.6 = up to ~59° diagonal). Raise = only clean left/right flicks
 FINGER_FLICK_GRACE = 0.08      # forgive lost or blurry frames up to this long mid-flick (about 2 frames at 30 fps)
 FINGER_FLICK_COOLDOWN = 0.4    # seconds after a flick before the next can happen
 FINGER_FLICK_DEBUG = True      # print each attempt's peak speed vs the threshold (and the palm speed) in Terminal
