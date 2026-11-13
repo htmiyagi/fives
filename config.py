@@ -264,6 +264,12 @@ POINT_DEBUG = True             # print "locked on: music" / "lock released" in T
 POINT_FLICK_COOLDOWN = 0.3     # after a ✌️ swipe, wait this long before the next (short, so the undo swipe works)
 POINT_FLICK_DISTANCE = 0.35    # how far a ✌️ swipe must go, in hand sizes (the palm swipe uses FLICK_DISTANCE). Lower = more sensitive
 POINT_SWIPE_GRACE = 0.5        # a ✌️ swipe still counts for a window you left this many seconds ago (fast swipes leave it early)
+
+# --- Gesture recorder (GESTURES.md "tools"): saves hand points only, never pictures, to recordings/ (gitignored) ---
+# Tap a combo to start recording with that label, tap it again to stop and save. Works from any app.
+# "flick": ONE real attempt per recording (tap, flick once, tap). "not": normal hand use that must NOT
+# trigger it (typing, pointing, reaching, waving), any length. Score them with: python score_gestures.py
+RECORD_KEYS = {"flick": ["ctrl", "alt", "f"], "not": ["ctrl", "alt", "n"]}
 POINT_UNDO_SECONDS = 1.0       # after swiping a window away, swipe the other way within this long to bring it back
 # HOLD TO SNAP (like Apple Pencil) - in draw mode, draw a shape and HOLD STILL at the end.
 # FIVES undoes your wobbly stroke in the app (Cmd+Z) and redraws it clean: straight line,
