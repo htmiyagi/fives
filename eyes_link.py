@@ -6,6 +6,7 @@ Two programs can't draw in the same window. So they share a piece of memory inst
     eyes.py  --- each finished HUD picture --->  [ shared memory ]  --- newest picture --->  hub.py's EYES tab
     eyes.py  <--------------- "key 99" lines on eyes.py's stdin (the keys you press) ------  hub.py
     eyes.py  --- "show the BRAIN tab" (a wheel wedge was clicked) --->  [ shared memory ]  --->  hub.py
+    eyes.py  <--------------- "frame x y w h" / "hidden" lines (where the FIVES window is) -------  hub.py
 
 The picture is not changed on the way: the exact pixels eyes.py would have put in its own window are copied
 across as a .bmp (a picture format with no compression, so nothing is lost).
@@ -53,6 +54,18 @@ def _attach(name):
         return shm
 
 
+HIDE = "hide"                    # tab request: put the FIVES window away (a ✌️ finger flick)
+FRONT = "front"                  # tab request: bring it back on the tab it was on (the undo flick)
+
+
+def parse_frame(words) -> tuple | None:
+    """["10", "20", "800", "600"] -> (10.0, 20.0, 800.0, 600.0), or None if they aren't numbers."""
+    try:
+        return tuple(float(w) for w in words)
+    except ValueError:
+        return None
+
+
 def put_tab(buf, name: str) -> None:
     """Ask for a tab: write its name first, THEN bump the counter, so hub.py never reads half a name."""
     raw = name.encode()[:16]
@@ -78,22 +91,29 @@ class Sender:
         self.map = self.shm.buf
         self.seq = struct.unpack_from("<Q", self.map, 0)[0] | 1      # carry on counting from where it was (kept odd)
         self.keys = queue.Queue()
+        self.frame = None                            # where the FIVES window is (x, y, w, h, top-left origin), None = hidden
         self.warned = False
         threading.Thread(target=self._listen, daemon=True).start()
 
     def _listen(self):
-        """The FIVES window writes one line per key press: "key 99" (99 is the letter c)."""
+        """The FIVES window writes one line per key press: "key 99" (99 is the letter c).
+        It also says where it is ("frame x y w h") or that it's put away ("hidden")."""
         try:
             for line in sys.stdin:
                 parts = line.split()
                 if len(parts) == 2 and parts[0] == "key" and parts[1].isdigit():
                     self.keys.put(int(parts[1]) & 0xFF)
+                elif len(parts) == 5 and parts[0] == "frame":
+                    self.frame = parse_frame(parts[1:])
+                elif parts == ["hidden"]:
+                    self.frame = None
         except Exception:
             pass
         self.keys.put(ord("q"))                      # the FIVES window hung up (closed or crashed): quit too
 
     def ask_tab(self, name: str) -> None:
-        """Ask the FIVES window to show one of its tabs (brain, eyes, settings) and come to the front."""
+        """Ask the FIVES window to show one of its tabs (brain, eyes, settings) and come to the front.
+        Two special names: HIDE puts the whole window away, FRONT brings it back on the tab it was on."""
         put_tab(self.map, name)
 
     def show(self, picture) -> int:
@@ -165,6 +185,17 @@ class Viewer:
     def forget(self) -> None:
         """Ignore whatever is in the memory right now (a leftover picture from an eyes.py that has since stopped)."""
         self.seen = struct.unpack_from("<Q", self.map, 0)[0]
+
+    @staticmethod
+    def tell_frame(proc, frame) -> bool:
+        """Tell eyes.py where the FIVES window is now (x, y, w, h, top-left origin), or None = hidden."""
+        line = "hidden\n" if frame is None else "frame %.0f %.0f %.0f %.0f\n" % tuple(frame)
+        try:
+            proc.stdin.write(line)
+            proc.stdin.flush()
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def press(proc, char: str) -> bool:

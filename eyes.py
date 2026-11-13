@@ -352,6 +352,27 @@ class HubTab:
             self.hub.ask_tab(self.tab)
 
 
+class HubWindow:
+    """The whole FIVES window (hub.py), dressed up as a window so a ✌️ finger flick can put it away.
+    hub.py tells us where it is (its .frame), and we ask it to hide or come back through the shared memory."""
+
+    def __init__(self, hub):
+        self.hub = hub
+
+    @property
+    def frame(self):
+        """Where the FIVES window is (x, y, w, h), or None while it's put away. (A property: it reads like a
+        plain value, but it asks the link each time, so it's always the newest.)"""
+        return self.hub.frame
+
+    def send(self, word: str) -> None:
+        if word == "hide":
+            self.hub.ask_tab(eyes_link.HIDE)
+        elif word in ("show", "toggle"):
+            self.hub.ask_tab(eyes_link.FRONT)       # back on whatever tab it was on
+        # anything else (like "glow 1") the FIVES window doesn't do yet: ignored
+
+
 class PanelLink:
     """Starts a FIVES window (panel.py, sketch.py) as its own little program and sends it one-word commands.
     With listen=True the window talks back: "closed", and "frame x y w h" / "hidden" so we know where it is
@@ -759,7 +780,7 @@ def main() -> None:
         if pt is None:
             return None
         x, y = pt
-        for link in (panel, sketch):            # add future windows here
+        for link in (panel, sketch, hub_window):    # add future windows here (the FIVES window last: it's underneath)
             f = getattr(link, "frame", None) if link is not None else None
             if f and f[0] <= x <= f[0] + f[2] and f[1] <= y <= f[1] + f[3]:
                 return link
@@ -774,6 +795,10 @@ def main() -> None:
     in_hub = eyes_link.sender()       # set when the FIVES window (hub.py) started us: IT shows the picture (EYES tab)
     for tab in wheel_logic.HUB_TABS:              # so the wheel's BRAIN / EYES / SETTINGS wedges can switch the FIVES window's tab
         actions.connect_window(tab, HubTab(in_hub, tab) if in_hub is not None else None)
+    hub_window = HubWindow(in_hub) if in_hub is not None else None      # ✌️ finger flick can put it away
+    actions.connect_window(actions.HUB, hub_window)
+    if hub_window is not None:
+        window_names[id(hub_window)] = actions.HUB
     if hud is not None and in_hub is None:
         cv2.namedWindow(window, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(window, *hud.size)       # shown at layout size; drawn at HUD_SCALE x for sharpness

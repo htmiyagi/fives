@@ -137,10 +137,13 @@ def close_wheel() -> str:
     return _send("wheel", "hide", "Wheel closed.")
 
 
+HUB = "fives"     # the FIVES window itself (hub.py, the one with the tabs). Not a wedge: its tabs are.
+
+
 def _window_name(name) -> str | None:
     """The window's proper name ("Music " -> "music"), or None if FIVES has no such window."""
     cleaned = str(name).strip().lower()
-    return cleaned if cleaned in wheel_logic.WINDOWS else None
+    return cleaned if cleaned in wheel_logic.WINDOWS or cleaned == HUB else None
 
 
 @action("open_window", "Bring one FIVES window into view.", {"window": "which window, e.g. music or settings"})
@@ -161,6 +164,8 @@ def hide_window(window: str) -> str:
         return f"{name.capitalize()} is a tab in the FIVES window, so there's nothing to put away."
     if name == "sketch":
         return put_away_sketch()          # the sketch window also has to forget where it was
+    if name == HUB:
+        return _send(HUB, "hide", "FIVES window put away. Any BRAIN / EYES / SETTINGS wedge brings it back.")
     return _send(name, "hide", f"{name.capitalize()} window put away.")
 
 

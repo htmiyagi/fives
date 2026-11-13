@@ -116,6 +116,7 @@ class State:
     scale = 1.0                  # window size / design size
     dirty = True                 # something changed: redraw
     eyes = None                  # the running eyes.py
+    told_where = None            # (eyes.py, where the window was) last time we told it, so we only send changes
     frame = None                 # the newest eyes picture (NSImage)
     frame_size = (16, 9)         # its width and height in pixels
     brain = "checking"           # "ready" / "missing" (Ollama is on, model isn't downloaded) / "asleep" / "checking"
@@ -157,6 +158,24 @@ def eyes_status():
     if not eyes_running():
         return "off"
     return "on" if S.frame is not None else "waking"
+
+
+def where_on_screen():
+    """Where the FIVES window is (x, y, w, h, top-left origin like mouse positions), or None while it's put away."""
+    if not win.isVisible() or win.isMiniaturized():
+        return None
+    f = win.frame()
+    main_h = NSScreen.screens()[0].frame().size.height
+    return (f.origin.x, main_h - (f.origin.y + f.size.height), f.size.width, f.size.height)   # Cocoa counts y from the bottom
+
+
+def tell_eyes_where():
+    """Tell eyes.py where we are whenever that changes, so a ✌️ finger flick at us can put us away."""
+    where = where_on_screen()
+    if (S.eyes, where) == S.told_where or not eyes_running():
+        return
+    if eyes_link.Viewer.tell_frame(S.eyes, where):
+        S.told_where = (S.eyes, where)
 
 
 def quit_fives(*_):
@@ -1016,8 +1035,13 @@ class Ticker(NSObject):
         watching = seen and eyes_running() and (S.tab == "eyes" or S.frame is None)
         link.watch(watching)
         asked = link.tab_request()          # a BRAIN / EYES / SETTINGS wedge was clicked on the wheel
-        if asked:
+        if asked == eyes_link.HIDE:         # ✌️ finger flick at us: put the whole window away
+            win.orderOut_(None)
+        elif asked == eyes_link.FRONT:      # the undo flick: come back on the same tab
+            show_tab(S.tab)
+        elif asked:
             show_tab(asked)
+        tell_eyes_where()
         redraw = S.dirty
         data = link.newest() if watching else None
         if data is not None:
