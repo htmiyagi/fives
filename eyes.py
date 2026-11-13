@@ -727,22 +727,18 @@ def main() -> None:
             print(f"locked on: {window_names.get(id(target))}" if target is not None else "lock released")
         glowing[0] = target
 
-    # ✌️ swipe while locked on = put that window away. Its own short cooldown, or it would block the undo swipe.
-    point_flick = (g.FlickDetector(config.POINT_FLICK_DISTANCE, config.FLICK_SECONDS, config.POINT_FLICK_COOLDOWN,
-                                   pose=lambda pts: g.two_finger_pose(pts, config.POINT_FACTOR))
-                   if lock is not None else None)
-    # The new finger flick, WATCH-ONLY for now: it prints what it sees so you can tune it, but does nothing yet.
-    finger_flick = score_gestures.make_finger_flick() if getattr(config, "FINGER_FLICK_DEBUG", False) else None
+    # ✌️ finger flick while locked on = put that window away; a finger flick back = undo (FINGER_FLICK_* in config).
+    finger_flick = score_gestures.make_finger_flick() if lock is not None else None
     undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 
     def put_away(swipe, target):
-        """✌️ swipe while locked on: hide that window and open the undo second. Returns its name."""
+        """✌️ finger flick while locked on: hide that window and open the undo second. Returns its name."""
         name = window_names.get(id(target))
         lock.release()
         aim_at(None)                                    # stop glowing first, so it comes back un-lit
-        print(f"✌️ swipe {swipe}: {actions.run('hide_window', window=name)}"
-              f"  (swipe back within {config.POINT_UNDO_SECONDS:g} s to undo)")
+        print(f"finger flick {swipe}: {actions.run('hide_window', window=name)}"
+              f"  (hold ✌️, then flick back within {config.POINT_UNDO_SECONDS:g} s to undo)")
         return name
 
     def undoing(t):
@@ -755,7 +751,7 @@ def main() -> None:
         if swipe == first:
             return False                                # same way again: ignore it
         restore.append(name)
-        print(f"swipe {swipe}: undo, bringing {name} back")
+        print(f"finger flick {swipe}: undo, bringing {name} back")
         return True
 
     def window_under(pt):
@@ -1000,30 +996,27 @@ def main() -> None:
                 ratio = g.pinch_ratio(points)           # thumb <-> index gap
                 last_gap[0] = ratio
                 palm_flat = False                       # open hand: freeze the cursor, listen for a flick
-                if finger_flick is not None:            # watch-only: print attempts, act on nothing
-                    seen = finger_flick.update(t, points)
-                    if finger_flick.last_attempt and finger_flick.last_attempt[0] >= 0.4 * config.FINGER_FLICK_SPEED:
-                        print(g.finger_flick_report(finger_flick.last_attempt, config.FINGER_FLICK_SPEED,
-                                                    config.FINGER_FLICK_PALM_MAX))
+                flicked = None
+                if finger_flick is not None:            # ✌️ then fingertips snap sideways, palm still
+                    flicked = finger_flick.update(t, points)
+                    attempt = finger_flick.last_attempt
+                    if (getattr(config, "FINGER_FLICK_DEBUG", False) and attempt
+                            and attempt[0] >= 0.4 * config.FINGER_FLICK_SPEED):
+                        print(g.finger_flick_report(attempt, config.FINGER_FLICK_SPEED, config.FINGER_FLICK_PALM_MAX))
                     finger_flick.last_attempt = None
-                    if seen:
-                        print(f"finger flick {seen.upper()} (watch-only: not wired to anything yet)")
                 locked = None
                 if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
                     locked = lock.update(t, window_under(last_sent) if pointing else None)
                     aim_at(locked)
-                    swipe = point_flick.update(t, points)
-                    if getattr(config, "POINT_DEBUG", False) and point_flick.last_best >= 0.15:
-                        print(f"✌️ swipe reached {point_flick.last_best:.2f} of {config.POINT_FLICK_DISTANCE} hand-sizes needed")
-                    point_flick.last_best = 0.0
-                    swiped = lock.recent(t, config.POINT_SWIPE_GRACE) if swipe else None   # what the swipe was aimed at
-                    if swipe and undoing(t):
-                        if take_back(swipe):
+                    # (flicking moves the index tip, so the cursor may have just left the window: lock.recent)
+                    flicked_at = lock.recent(t, config.POINT_SWIPE_GRACE) if flicked else None
+                    if flicked and undoing(t):          # the ONLY way to undo: a finger flick back
+                        if take_back(flicked):
                             undo = None
-                    elif swiped is not None:
-                        name = put_away(swipe, swiped)
-                        undo = (name, swipe, t + config.POINT_UNDO_SECONDS)
+                    elif flicked_at is not None:
+                        name = put_away(flicked, flicked_at)
+                        undo = (name, flicked, t + config.POINT_UNDO_SECONDS)
                         swiped_sketch = swiped_sketch or name == "sketch"           # leave draw mode too
                         flash_text, flash_until = f"{name.upper()} PUT AWAY", time.monotonic() + 1.0
                 if flick is not None:
@@ -1041,9 +1034,8 @@ def main() -> None:
                                   + ("" if flick.last_best >= config.FLICK_DISTANCE else "  (swipe farther or faster, or lower FLICK_DISTANCE)"))
                         flick.last_best = 0.0
                     palm_flat = flick.is_open and config.FLICK_FREEZE_CURSOR
-                    if direction and undoing(t):          # palm swipe in the undo second: only undo counts
-                        if take_back(direction):
-                            undo = None
+                    if direction and undoing(t):          # palm swipe in the undo second: ignored (no wheel, no undo)
+                        print("palm swipe ignored: only a ✌️ finger flick back can undo")
                     elif direction:
                         on = "sketch" if sketch is not None and window_under(last_sent) is sketch else None
                         name = actions.action_for(f"flick_{direction}", on)     # the GESTURES table in actions.py
@@ -1255,7 +1247,6 @@ def main() -> None:
                     finger_flick.miss(stamp)
                 if lock is not None:
                     aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
-                    point_flick.miss(stamp)
                 if flick is not None:
                     flick.miss(stamp)                   # a blurry fast swipe can lose the hand for a frame or two
                 smooth.reset()

@@ -171,6 +171,21 @@ class FingerFlick(unittest.TestCase):
     def test_too_slow_does_not_fire(self):
         self.assertEqual(play(detector(), HOLD + finger_flick(step=0.03)), [])
 
+    def test_returning_to_the_center_after_a_flick_does_not_undo(self):
+        # flick right, then the whole hand drifts back left toward the screen's center (still in ✌️)
+        det = detector()
+        play(det, HOLD + finger_flick())
+        flicked = moved(V, tips=0.45)
+        drift_back = [moved(flicked, everything=-0.15 * k) for k in range(1, 8)]
+        self.assertEqual(play(det, drift_back, start=7 * FRAME), [])
+
+    def test_stop_then_flick_back_does_undo(self):
+        # flick right, STOP in ✌️ for a moment (re-arms), then flick the fingers back left
+        det = detector()
+        play(det, HOLD + finger_flick())
+        stop_and_flick_back = HOLD * 4 + finger_flick(step=-0.15)          # 16 still frames = past the cooldown
+        self.assertEqual(play(det, stop_and_flick_back, start=7 * FRAME), ["left"])
+
     def test_no_point_first_does_not_fire(self):
         index_only = hand("index")
         frames = [index_only] * 4 + [moved(index_only, tips=0.15 * k) for k in range(1, 4)]
