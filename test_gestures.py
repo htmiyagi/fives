@@ -72,6 +72,56 @@ class LockOnStickiness(unittest.TestCase):
         lock.release()
         self.assertIsNone(lock.target)
 
+    def test_recent_remembers_a_window_just_left(self):
+        # a fast swipe: the cursor leaves the window and the lock lets go before the swipe is finished
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.update(0.1, None)
+        lock.update(0.45, None)                        # let go at 0.45
+        self.assertEqual(lock.recent(0.7, within=0.5), "music")
+
+    def test_recent_forgets_after_the_grace(self):
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.update(0.1, None)
+        lock.update(0.45, None)
+        self.assertIsNone(lock.recent(1.0, within=0.5))
+
+    def test_recent_forgets_a_window_that_was_put_away(self):
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.release()                                 # swiped away: don't swipe it again
+        self.assertIsNone(lock.recent(0.1, within=0.5))
+
+
+def slide(detector, points, start_t, dx_total, frames=7, step=0.05):
+    """Move a fake hand sideways by dx_total over a few frames. Returns the first swipe seen (or None)."""
+    seen = None
+    for i in range(frames):
+        shift = dx_total * i / (frames - 1)
+        moved = [(x + shift, y) for x, y in points]
+        seen = seen or detector.update(start_t + i * step, moved)
+    return seen
+
+
+def two_finger_flick():
+    return g.FlickDetector(distance=1.0, seconds=0.5, cooldown=0.3, pose=g.two_finger_pose)
+
+
+class TwoFingerSwipe(unittest.TestCase):
+    def test_two_finger_slide_is_a_swipe(self):
+        self.assertEqual(slide(two_finger_flick(), hand("index", "middle"), 0.0, 0.6), "right")
+
+    def test_open_palm_slide_is_not_a_two_finger_swipe(self):
+        self.assertIsNone(slide(two_finger_flick(), hand("index", "middle", "ring", "pinky"), 0.0, 0.6))
+
+    def test_swipe_back_soon_after_still_counts(self):
+        # the undo: right, then left half a second later (a 1 s cooldown would have blocked this)
+        detector = two_finger_flick()
+        self.assertEqual(slide(detector, hand("index", "middle"), 0.0, 0.6), "right")
+        moved_right = [(x + 0.6, y) for x, y in hand("index", "middle")]
+        self.assertEqual(slide(detector, moved_right, 0.8, -0.6), "left")
+
 
 if __name__ == "__main__":
     unittest.main()

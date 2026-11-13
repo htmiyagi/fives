@@ -91,6 +91,8 @@ class LockOn:
         self._drifting = False    # True while the aim is somewhere other than the target...
         self._other = None        # ...where it is (a window, or None = empty space)...
         self._since = 0.0         # ...and since when
+        self._last = None         # the window we let go of most recently...
+        self._last_at = -1e9      # ...and when
 
     def update(self, t: float, seen):
         """Returns the locked window (or None)."""
@@ -103,16 +105,24 @@ class LockOn:
             if not self._drifting or seen != self._other:   # started looking somewhere new: start the clock
                 self._drifting, self._other, self._since = True, seen, t
             if t - self._since >= self.hold:       # been away long enough: follow it
+                self._last, self._last_at = self.target, t
                 self.target, self._drifting = seen, False
         return self.target
 
+    def recent(self, t: float, within: float):
+        """The locked window, or the one we let go of less than `within` seconds ago. A quick swipe carries
+        the cursor off the window before the swipe is finished, and it should still count for that window."""
+        if self.target is not None:
+            return self.target
+        return self._last if t - self._last_at <= within else None
+
     def release(self) -> None:
         """Let go right away (for example, the window was just swiped away)."""
-        self.target, self._drifting = None, False
+        self.target, self._drifting, self._last = None, False, None
 
 
 class FlickDetector:
-    """Spots a quick sideways swipe of an open hand.
+    """Spots a quick sideways swipe of an open hand (or of another hand shape: pass `pose`).
 
     Feed it every frame with update() (and miss() on frames with no hand). It answers "left", "right"
     or None, where left / right are the way you moved your hand (the picture is mirrored, like a mirror).
@@ -125,9 +135,11 @@ class FlickDetector:
     frame or two. We forgive gaps shorter than `grace` seconds instead of starting over.
     """
 
-    def __init__(self, distance=1.2, seconds=0.45, cooldown=1.0, sideways=0.7, palm_factor=1.15, grace=0.2):
+    def __init__(self, distance=1.2, seconds=0.45, cooldown=1.0, sideways=0.7, palm_factor=1.15, grace=0.2,
+                 pose=None):
         self.distance, self.seconds, self.cooldown = distance, seconds, cooldown
         self.sideways, self.palm_factor, self.grace = sideways, palm_factor, grace
+        self.pose = pose              # which hand shape counts (a function of the points); None = open palm
         self.trail = deque()          # (time, x, y, hand size) while the palm is open
         self.last_flick = -1e9
         self.last_open = -1e9         # when we last saw an open palm
@@ -151,7 +163,8 @@ class FlickDetector:
             self.reset()
 
     def update(self, t: float, points):
-        if not open_palm(points, self.palm_factor):
+        right_shape = self.pose(points) if self.pose else open_palm(points, self.palm_factor)
+        if not right_shape:
             self.miss(t)
             return None
         self.last_open = t

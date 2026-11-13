@@ -261,6 +261,10 @@ POINT_LOCK = True
 POINT_FACTOR = 1.1             # how straight index + middle must be (and ring + pinky curled). 1.05 = easy, 1.25 = strict
 POINT_LOCK_HOLD = 0.3          # seconds your aim must stay off a window before the lock moves or lets go (stops flicker)
 POINT_DEBUG = True             # print "locked on: music" / "lock released" in Terminal
+POINT_FLICK_COOLDOWN = 0.3     # after a ✌️ swipe, wait this long before the next (short, so the undo swipe works)
+POINT_FLICK_DISTANCE = 0.35    # how far a ✌️ swipe must go, in hand sizes (the palm swipe uses FLICK_DISTANCE). Lower = more sensitive
+POINT_SWIPE_GRACE = 0.5        # a ✌️ swipe still counts for a window you left this many seconds ago (fast swipes leave it early)
+POINT_UNDO_SECONDS = 1.0       # after swiping a window away, swipe the other way within this long to bring it back
 # HOLD TO SNAP (like Apple Pencil) - in draw mode, draw a shape and HOLD STILL at the end.
 # FIVES undoes your wobbly stroke in the app (Cmd+Z) and redraws it clean: straight line,
 # circle, ellipse, triangle, rectangle or square. Other strokes get smoothed. The app needs a working undo.

@@ -28,8 +28,9 @@ from panel_logic import CUT, H, MAX_W, MIN_W, W, Layout, clamp_width, ellipsize,
 TINT_ALPHA = 0.36          # how dark the glass is. Lower = see more of Chrome behind it (0.2 to 0.8)
 TEXT_ALPHA = 0.80          # how solid the writing is. Lower = more see-through hologram (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off, 1 = normal, 1.6 = very bright
-TARGETED_GLOW = 1.4        # glow multiplier while you point at the window with two fingers (1 = no change)
-TARGET_BAND = 6            # ...plus a soft band of light this wide along the edge (0 = none)
+TARGETED_GLOW = 2.0        # glow multiplier while you point at the window with two fingers (1 = no change)
+TARGET_BAND = 12           # ...plus a band of light this wide along the edge (0 = none)
+TARGET_BAND_ALPHA = 0.7    # ...this bright (0 = invisible, 1 = solid)
 SWEEP = True               # a faint bright line sliding down the window, like a hologram scan
 CLOSE_QUITS_SPOTIFY = True # the CLOSE button also closes the Spotify app (the hotkey only hides the window)
 MARGIN = 24                # distance from the top-right corner of the screen
@@ -382,7 +383,7 @@ def main() -> None:
         poly(frame_points(1), stroke=BLUE, width=1.8, stroke_alpha=1.0, glow=9)
         poly(frame_points(6), stroke=BLUE, width=0.8, stroke_alpha=0.5)
         if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
-            poly(frame_points(1), stroke=BLUE, width=TARGET_BAND, stroke_alpha=0.35, glow=22)
+            poly(frame_points(1), stroke=BLUE, width=TARGET_BAND, stroke_alpha=TARGET_BAND_ALPHA, glow=22)
         c = CUT
         line(c, 1, 1, c, WHITE, 3, 0.95, glow=7)                  # top-left cut edge
         line(W - c, H - 1, W - 1, H - c, WHITE, 3, 0.95, glow=7)  # bottom-right cut edge

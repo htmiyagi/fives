@@ -103,6 +103,8 @@ Keep this up to date. It's how collisions get avoided.
 | gesture | hand shape + motion | action | status |
 |---|---|---|---|
 | flick | open palm, swipe left / right | open / close the wheel (or put the sketch away when pointing at it) | works; settings `FLICK_*` |
+| point | ✌️ index + middle out, aim at a FIVES window | lock on (window glows faintly); pauses the wheel swipe | works; settings `POINT_*` |
+| point-swipe | ✌️ while locked on, swipe left / right | put that window away; swipe back within `POINT_UNDO_SECONDS` to undo | works; uses `FLICK_DISTANCE` / `FLICK_SECONDS` |
 | pinch | thumb + index together | grab FIVES windows (reserved) | exists for clicking today; to be moved to grabbing |
 | skip | not decided yet | skip | **next: Hoyu designs it** |
 | previous / replay | not decided yet | previous / restart | after skip |
