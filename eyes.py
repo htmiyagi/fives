@@ -750,6 +750,17 @@ def main() -> None:
 
     # ✌️ finger flick while locked on = put that window away; a finger flick back = undo (FINGER_FLICK_* in config).
     finger_flick = score_gestures.make_finger_flick() if lock is not None else None
+    # The FIVES window's flip-back is more forgiving: diagonal flicks and a moving palm count (HUB_UNDO_* in config).
+    # It watches every frame (so it's warmed up), but only counts while you're bringing the FIVES window back.
+    hub_undo_flick = None
+    if finger_flick is not None:
+        hub_undo_flick = score_gestures.make_finger_flick()
+        hub_undo_flick.sideways = getattr(config, "HUB_UNDO_SIDEWAYS", 0.5)
+        hub_undo_flick.palm_max = getattr(config, "HUB_UNDO_PALM_MAX", 3.0)
+
+    def undo_seconds(name):
+        """How long you have to flick a window back. The FIVES window gets longer (it hides everything)."""
+        return getattr(config, "HUB_UNDO_SECONDS", 2.0) if name == actions.HUB else config.POINT_UNDO_SECONDS
     undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 
@@ -759,7 +770,7 @@ def main() -> None:
         lock.release()
         aim_at(None)                                    # stop glowing first, so it comes back un-lit
         print(f"finger flick {swipe}: {actions.run('hide_window', window=name)}"
-              f"  (hold ✌️, then flick back within {config.POINT_UNDO_SECONDS:g} s to undo)")
+              f"  (hold ✌️, then flick back within {undo_seconds(name):g} s to undo)")
         return name
 
     def undoing(t):
@@ -1027,8 +1038,12 @@ def main() -> None:
                     attempt = finger_flick.last_attempt
                     if (getattr(config, "FINGER_FLICK_DEBUG", False) and attempt
                             and attempt[0] >= 0.4 * config.FINGER_FLICK_SPEED):
-                        print(g.finger_flick_report(attempt, config.FINGER_FLICK_SPEED, config.FINGER_FLICK_PALM_MAX))
+                        print(g.finger_flick_report(attempt, config.FINGER_FLICK_SPEED, config.FINGER_FLICK_PALM_MAX)
+                              + f"  [{fps:.0f} fps]")           # fewer frames = jumpier speeds
                     finger_flick.last_attempt = None
+                    loose = hub_undo_flick.update(t, points)
+                    if loose and undoing(t) and undo[0] == actions.HUB:
+                        flicked = loose                 # bringing the FIVES window back: the forgiving one counts
                 locked = None
                 if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
@@ -1041,7 +1056,7 @@ def main() -> None:
                             undo = None
                     elif flicked_at is not None:
                         name = put_away(flicked, flicked_at)
-                        undo = (name, flicked, t + config.POINT_UNDO_SECONDS)
+                        undo = (name, flicked, t + undo_seconds(name))
                         swiped_sketch = swiped_sketch or name == "sketch"           # leave draw mode too
                         flash_text, flash_until = f"{name.upper()} PUT AWAY", time.monotonic() + 1.0
                 if flick is not None:
