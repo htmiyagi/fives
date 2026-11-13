@@ -167,5 +167,53 @@ class NumberKeys(unittest.TestCase):
         self.assertIsNone(wl.wedge_for_number(0, ["music", "settings"]))
 
 
+class Editing(unittest.TestCase):
+    """The WHEEL page in Settings: move, remove and add wedges. Every helper returns a NEW list."""
+    START = ["music", "sketch", "brain", "settings"]
+
+    def test_move_down(self):
+        self.assertEqual(wl.move(self.START, 0, 2), ["sketch", "brain", "music", "settings"])
+
+    def test_move_up(self):
+        self.assertEqual(wl.move(self.START, 3, 0), ["settings", "music", "sketch", "brain"])
+
+    def test_move_past_the_end_stops_at_the_end(self):
+        self.assertEqual(wl.move(self.START, 0, 99), ["sketch", "brain", "settings", "music"])
+
+    def test_move_does_not_change_the_list_passed_in(self):
+        start = list(self.START)
+        wl.move(start, 0, 2)
+        self.assertEqual(start, self.START)
+
+    def test_remove(self):
+        self.assertEqual(wl.remove(self.START, "sketch"), ["music", "brain", "settings"])
+
+    def test_settings_can_never_be_removed(self):
+        self.assertFalse(wl.can_remove(self.START, "settings"))
+        self.assertEqual(wl.remove(self.START, "settings"), self.START)
+
+    def test_the_last_wedge_besides_settings_stays(self):
+        self.assertFalse(wl.can_remove(["music", "settings"], "music"))
+        self.assertEqual(wl.remove(["music", "settings"], "music"), ["music", "settings"])
+
+    def test_missing_lists_the_windows_not_on_the_wheel(self):
+        self.assertEqual(wl.missing(self.START), ["eyes"])
+
+    def test_add_goes_just_before_settings_when_settings_is_last(self):
+        self.assertEqual(wl.add(self.START, "eyes"), ["music", "sketch", "brain", "eyes", "settings"])
+
+    def test_add_goes_at_the_end_when_settings_was_moved(self):
+        self.assertEqual(wl.add(["settings", "music"], "eyes"), ["settings", "music", "eyes"])
+
+    def test_add_twice_or_unknown_does_nothing(self):
+        self.assertEqual(wl.add(self.START, "music"), self.START)
+        self.assertEqual(wl.add(self.START, "toaster"), self.START)
+
+    def test_cannot_add_past_the_max(self):
+        full = ["w%d" % n for n in range(wl.MAX_WEDGES)]
+        self.assertFalse(wl.can_add(full))
+        self.assertTrue(wl.can_add(self.START))
+
+
 if __name__ == "__main__":
     unittest.main()
