@@ -242,3 +242,124 @@ class OldGesturesIgnoreTheFingerFlick(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---- ↺ spin: the ☝️ index fingertip draws a fast circle ---------------------------------------------------------
+import math   # noqa: E402  (only the spin tests need it)
+
+
+ONE = hand("index")                 # ☝️
+
+
+def circle(degrees, radius=0.15, frames=20, start=ONE, cx=0.0, cy=0.0):
+    """The whole ☝️ hand travels round a circle of `radius` (picture units; this hand is 0.5 big, so 0.15 =
+    0.3 hand sizes). Positive degrees = counterclockwise AS YOU SEE IT (the picture's y grows DOWN)."""
+    out = []
+    for i in range(frames):
+        a = math.radians(degrees * i / (frames - 1))
+        dx, dy = cx + radius * math.cos(a), cy - radius * math.sin(a)
+        out.append([(x + dx, y + dy) for x, y in start])
+    return out
+
+
+def spinner():
+    return g.SpinDetector(turn=300, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+
+
+class OneFingerPose(unittest.TestCase):
+    def test_index_alone_is_the_pose(self):
+        self.assertTrue(g.one_finger_pose(ONE))
+
+    def test_two_fingers_is_not(self):
+        self.assertFalse(g.one_finger_pose(V))
+
+    def test_fist_and_open_hand_are_not(self):
+        self.assertFalse(g.one_finger_pose(hand()))
+        self.assertFalse(g.one_finger_pose(hand("index", "middle", "ring", "pinky")))
+
+
+class Winding(unittest.TestCase):
+    def test_full_counterclockwise_circle_is_plus_360(self):
+        path = [(math.cos(math.radians(a)), -math.sin(math.radians(a))) for a in range(0, 361, 15)]
+        self.assertAlmostEqual(g.winding_degrees(path), 360, delta=1)
+
+    def test_clockwise_is_negative(self):
+        path = [(math.cos(math.radians(a)), math.sin(math.radians(a))) for a in range(0, 361, 15)]
+        self.assertAlmostEqual(g.winding_degrees(path), -360, delta=1)
+
+    def test_three_quarter_arc_reads_about_270(self):
+        path = [(math.cos(math.radians(a)), -math.sin(math.radians(a))) for a in range(0, 271, 10)]
+        self.assertAlmostEqual(g.winding_degrees(path), 270, delta=5)
+
+    def test_waving_along_an_arc_cancels_out(self):
+        # back and forth along the top of a circle (30° -> 150° -> 30° ...): the turns undo each other
+        angles = [90 + 60 * math.sin(i * 0.4) for i in range(40)]
+        path = [(math.cos(math.radians(a)), -math.sin(math.radians(a))) for a in angles]
+        self.assertLess(abs(g.winding_degrees(path)), 90)
+
+    def test_a_wave_is_flat_and_a_circle_is_round(self):
+        wave = [(0.5 * math.sin(i * 0.5), 0.02 * (i % 3)) for i in range(25)]
+        ring = [(math.cos(math.radians(a)), math.sin(math.radians(a))) for a in range(0, 361, 15)]
+        self.assertLess(g.path_roundness(wave), 0.4)
+        self.assertGreater(g.path_roundness(ring), 0.9)
+
+
+class Spin(unittest.TestCase):
+    def test_fast_counterclockwise_circle_fires_once(self):
+        self.assertEqual(play(spinner(), circle(360)), ["ccw"])
+
+    def test_fast_clockwise_circle_says_cw(self):
+        self.assertEqual(play(spinner(), circle(-360)), ["cw"])
+
+    def test_slow_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(360, frames=60)), [])      # 2 s for the loop: too slow
+
+    def test_side_to_side_wave_does_not_fire(self):
+        frames = [[(x + 0.25 * math.sin(i * 0.9), y + 0.01 * (i % 2)) for x, y in ONE] for i in range(24)]
+        self.assertEqual(play(spinner(), frames), [])
+
+    def test_tiny_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(360, radius=0.03)), [])    # 0.06 hand sizes: just jitter
+
+    def test_half_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(180, frames=10)), [])
+
+    def test_open_palm_circle_does_not_fire(self):
+        palm = hand("index", "middle", "ring", "pinky")
+        self.assertEqual(play(spinner(), circle(360, start=palm)), [])
+
+    def test_two_finger_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(360, start=V)), [])      # ✌️ belongs to the finger flick
+
+    def test_spin_is_not_a_finger_flick(self):
+        flick = detector()
+        self.assertEqual(play(flick, [ONE] * 4 + circle(360)), [])
+
+    def test_straight_one_finger_slide_does_not_fire(self):
+        frames = [[(x + 0.04 * i, y) for x, y in ONE] for i in range(20)]
+        self.assertEqual(play(spinner(), frames), [])
+
+    def test_two_loops_in_a_row_fire_once_inside_the_cooldown(self):
+        self.assertEqual(play(spinner(), circle(720, frames=36)), ["ccw"])
+
+    def test_losing_the_hand_too_long_starts_over(self):
+        frames = circle(360)
+        broken = frames[:10] + [None] * 6 + frames[10:]                  # 0.2 s gone, grace is 0.1 s
+        self.assertEqual(play(spinner(), broken), [])
+
+    def test_debug_report_says_why_a_half_circle_missed(self):
+        detector = spinner()
+        play(detector, circle(180, frames=10) + [hand()] * 5)            # then the ☝️ ends (past the grace)
+        line = g.spin_report(detector.last_attempt, 300, 0.2)
+        self.assertIn("SPIN_TURN", line)
+
+
+class SpinAtTheConfigTurn(unittest.TestCase):
+    def test_half_circle_stays_under_250(self):
+        # part-circles over-read a little (a half reads ~235°), so 250 is the floor for SPIN_TURN
+        detector = g.SpinDetector(turn=250, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+        self.assertEqual(play(detector, circle(180, frames=12)), [])
+
+    def test_three_quarter_circle_counts_at_250(self):
+        detector = g.SpinDetector(turn=250, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+        self.assertEqual(play(detector, circle(290, frames=18)), ["ccw"])

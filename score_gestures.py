@@ -42,6 +42,7 @@ def detectors() -> dict:
                         True),
         "finger-flick": ("✌️ finger flick: fingertips fast relative to a still palm (the new one)",
                          make_finger_flick, True),
+        "spin": ("☝️ ↺ spin: a collision check (it must NOT fire on flicks or normal use)", make_spin, False),
     }
 
 
@@ -50,6 +51,12 @@ def make_finger_flick() -> g.FingerFlickDetector:
     return g.FingerFlickDetector(config.FINGER_FLICK_SPEED, config.FINGER_FLICK_PALM_MAX, config.FINGER_FLICK_SECONDS,
                                  config.FINGER_FLICK_ARM_FRAMES, config.FINGER_FLICK_SIDEWAYS,
                                  config.FINGER_FLICK_GRACE, config.FINGER_FLICK_COOLDOWN, config.POINT_FACTOR)
+
+
+def make_spin() -> g.SpinDetector:
+    """A ☝️ spin detector with the current config.py numbers (eyes.py uses this too)."""
+    return g.SpinDetector(config.SPIN_TURN, config.SPIN_SECONDS, config.SPIN_MIN_RADIUS, config.SPIN_COOLDOWN,
+                          config.SPIN_GRACE, config.POINT_FACTOR, config.SPIN_ROUNDNESS)
 
 
 # ---- replaying -------------------------------------------------------------------------------------
