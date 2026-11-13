@@ -191,6 +191,15 @@ class WhichDeviceTests(FakeSpotify):
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
         self.assertEqual(self.moves(), [{"device_ids": ["mac"], "play": False}])
 
+    def test_any_way_of_saying_mac_means_this_mac(self):
+        devices = [MAC, ECHO]
+        for said in ("my mac", "my macbook air", "the imac", "hoyus mac", "my laptop", "Fives"):
+            self.assertEqual(music_tools._named_device(devices, said), MAC, said)
+
+    def test_another_macs_name_beats_this_mac(self):
+        other = {"id": "imac", "name": "Hoyu's iMac", "type": "Computer", "is_active": False}
+        self.assertEqual(music_tools._named_device([MAC, other], "hoyu's imac"), other)
+
     def test_unknown_speaker_says_what_spotify_can_see(self):
         self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
         reply = music_tools.play_music("Get Lucky", speaker="bathroom")

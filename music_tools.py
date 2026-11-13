@@ -53,7 +53,7 @@ WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up af
 HIDE_SPOTIFY_SECONDS = 8    # how long after opening Spotify we keep hiding its window (it pops up while loading)
 ALEXA_WORDS = {"alexa", "echo", "echo dot"}   # what people call an Amazon speaker
 SPEAKER_WORDS = {"speaker", "device"}          # said around a device's name ("the kitchen speaker")
-THIS_MAC_WORDS = {"computer", "mac", "laptop", "macbook", "here", "this mac", "this computer"}   # = this Mac
+COMPUTER_WORDS = {"computer", "mac", "macbook", "imac", "laptop", "desktop", "here"}   # any of these = this Mac
 SPOTIFY_BUNDLE_ID = "com.spotify.client"     # macOS's ID for the Spotify app
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
@@ -241,12 +241,14 @@ def _this_mac(devices: list[dict]) -> dict | None:
 def _named_device(devices: list[dict], speaker: str) -> dict | None:
     """The device you named ("kitchen", "my phone", "alexa"), or None if nothing matches."""
     wanted = " ".join(w for w in without_filler(speaker).split() if w.lower() not in SPEAKER_WORDS) or speaker
-    if wanted.lower().strip() in THIS_MAC_WORDS:    # "my computer" isn't a name Spotify knows: it means this Mac
-        return _this_mac(devices)
     if wanted.lower().strip() in ALEXA_WORDS:       # people say "Alexa", Spotify says "Hiyu's Echo Dot"
         wanted = "echo"
     name = best_name_match(wanted, [d.get("name", "") for d in devices])
-    return next((d for d in devices if d.get("name") == name), None)
+    if name:                                        # a real device name wins ("fives", or another Mac's name)
+        return next((d for d in devices if d.get("name") == name), None)
+    if COMPUTER_WORDS & set(_words(wanted)):        # "my macbook air", "hoyus mac": Spotify only knows "Fives"
+        return _this_mac(devices)
+    return None
 
 
 def split_speaker(what: str, devices: list[dict]) -> tuple[str, str]:
