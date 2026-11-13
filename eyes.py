@@ -39,6 +39,7 @@ import config
 import eyes_link
 import gestures as g
 import hotkey
+import gesture_recorder
 import hud as hud_mod
 import settings
 import wheel_logic
@@ -433,6 +434,25 @@ class PanelLink:
             self.proc = None
 
 
+FPS_CHECK_SECONDS = 5.0     # how long to count frames at startup before reporting the real frame rate
+
+
+def report_fps(check, stamp, camera) -> None:
+    """Count the frames reaching the hand tracker for the first few seconds, then say the real rate once.
+    (A flick lasts only a few frames, so this number matters for gestures.)"""
+    if check["done"]:
+        return
+    if check["start"] is None:
+        check["start"] = stamp
+    check["frames"] += 1
+    seconds = stamp - check["start"]
+    if seconds >= FPS_CHECK_SECONDS:
+        check["done"] = True
+        real = (check["frames"] - 1) / seconds
+        print(f"Frame rate: {real:.1f} fps really reach the hand tracker (asked the camera for "
+              f"{config.CAMERA_FPS}, it says {camera.get(cv2.CAP_PROP_FPS):.0f}). Try 60: python camera_fps.py")
+
+
 def ensure_model() -> str:
     """Download the hand-tracking model the first time (a few megabytes)."""
     if not MODEL_PATH.exists():
@@ -680,6 +700,13 @@ def main() -> None:
     if panel is not None and getattr(config, "PANEL_HOTKEY", None):
         panel_key = hotkey.HotkeyWatcher(config.PANEL_HOTKEY)
         panel_key.start()
+    recorder = gesture_recorder.GestureRecorder(Path(__file__).with_name("recordings"))   # GESTURES.md tools
+    record_keys = {}                             # label -> the key combo that starts / stops recording it
+    for label, keys in getattr(config, "RECORD_KEYS", {}).items():
+        record_key = hotkey.HotkeyWatcher(keys)
+        if record_key.start():
+            record_keys[label] = record_key
+    fps_check = {"start": None, "frames": 0, "done": False}   # measures the real frame rate once, at startup
     flick = None
     swiped_sketch = False                       # the sketch window was just swiped away: leave draw mode too
 
@@ -894,6 +921,12 @@ def main() -> None:
             frame_time[0] = stamp
             hud_points = hud_aim = hud_gap = None     # what the HUD shows this frame
             hud_state, hud_progress = "", 0.0
+            report_fps(fps_check, stamp, camera)
+            for label, record_key in record_keys.items():
+                if record_key.consume_tap():
+                    print(recorder.toggle(label))
+            if recorder.label:                          # show it in the HUD the whole time
+                flash_text, flash_until = f"REC  {recorder.label}", time.monotonic() + 0.2
             if panel_key is not None and panel_key.consume_tap():
                 actions.run("toggle_music")
             if sketch is not None and (sketch.closed.is_set() or swiped_sketch):   # CLOSE pressed, or swiped away
@@ -938,6 +971,7 @@ def main() -> None:
                 zs = [lm.z for lm in hand]              # MediaPipe's depth guess for each point (used for pinches)
                 if glitch_guard is not None:
                     points = glitch_guard.update(points)    # a one-frame "teleport" is a tracking glitch: ignore it
+                recorder.add(stamp, points, zs)             # (does nothing unless a recording is running)
                 h, w = frame.shape[:2]
 
                 # 3. meaning
@@ -1205,6 +1239,7 @@ def main() -> None:
                     draw_reticle(frame, (int(aim[0] * w), int(aim[1] * h)), state, progress)
                 status = (state or "tracking") + f"   idx {ratio:.2f}  mid {mid_ratio:.2f}"
             else:
+                recorder.add(stamp)                     # no hand this frame
                 if lock is not None:
                     aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
                     point_flick.miss(stamp)
@@ -1302,7 +1337,9 @@ def main() -> None:
             sketch.close()
         if wheel is not None:
             wheel.close()
-        for w in (draw_watcher, toggle, pen_key, snap_key, panel_key, *wedge_keys):
+        if recorder.label:
+            print(recorder.stop())                  # quitting mid-recording still saves it
+        for w in (draw_watcher, toggle, pen_key, snap_key, panel_key, *wedge_keys, *record_keys.values()):
             if w is not None:
                 w.stop()
         frames.close()

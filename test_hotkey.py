@@ -18,8 +18,15 @@ class KeyNames(unittest.TestCase):
         # with Option held, macOS reports the symbol (™) as the character, but the key code is still 2's
         self.assertEqual(hotkey.key_name(SimpleNamespace(vk=19, char="™")), "2")
 
-    def test_other_letter_keys_mean_nothing(self):
-        self.assertEqual(hotkey.key_name(SimpleNamespace(vk=0, char="a")), "")
+    def test_letter_key_is_found_by_its_key_code(self):
+        # with Ctrl held, the "character" is a control code, but the key code is still F's
+        self.assertEqual(hotkey.key_name(SimpleNamespace(vk=3, char="\x06")), "f")
+
+    def test_ctrl_option_letter_is_a_valid_combo(self):
+        self.assertIn("n", hotkey.HotkeyWatcher(["ctrl", "alt", "n"]).keys)
+
+    def test_unknown_keys_mean_nothing(self):
+        self.assertEqual(hotkey.key_name(SimpleNamespace(vk=999, char="?")), "")
 
     def test_option_plus_number_is_a_valid_combo(self):
         watcher = hotkey.HotkeyWatcher(["option", "3"])     # would raise ValueError if "3" were unknown

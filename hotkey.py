@@ -23,6 +23,11 @@ import time
 # The number keys along the top, by their macOS key code. (A number key has no "name" in pynput,
 # and with Option held it reports a symbol like ™ instead of "2", so the key code is the reliable way.)
 DIGIT_KEYCODES = {18: "1", 19: "2", 20: "3", 21: "4", 23: "5", 22: "6", 26: "7", 28: "8", 25: "9"}
+# Letter keys the same way (with Ctrl or Option held, the "character" would be something else).
+LETTER_KEYCODES = {0: "a", 11: "b", 8: "c", 2: "d", 14: "e", 3: "f", 5: "g", 4: "h", 34: "i", 38: "j", 40: "k",
+                   37: "l", 46: "m", 45: "n", 31: "o", 35: "p", 12: "q", 15: "r", 1: "s", 17: "t", 32: "u",
+                   9: "v", 13: "w", 7: "x", 16: "y", 6: "z"}
+CODE_KEYS = {**DIGIT_KEYCODES, **LETTER_KEYCODES}      # every key we know by its code
 
 # Each name you can use in config, and the keys that count for it.
 # (Left and right versions of a key both count.)
@@ -34,7 +39,7 @@ KEY_GROUPS = {
     "option": ("alt", "alt_l", "alt_r", "alt_gr"),
     "space": ("space",),
     "esc": ("esc",),
-    **{digit: (digit,) for digit in DIGIT_KEYCODES.values()},      # "1" ... "9"
+    **{key: (key,) for key in CODE_KEYS.values()},                 # "1" ... "9", "a" ... "z"
 }
 
 # macOS key codes, so we can recognise a key before anyone else sees it (for swallowing).
@@ -51,7 +56,7 @@ MAX_TAP_SECONDS = 1.0       # a "tap" must be over within this long (longer = yo
 
 def key_name(key) -> str:
     """pynput's key -> our name for it ("alt_l", "esc", "3"...), or "" for keys we don't use."""
-    return getattr(key, "name", None) or DIGIT_KEYCODES.get(getattr(key, "vk", None), "")
+    return getattr(key, "name", None) or CODE_KEYS.get(getattr(key, "vk", None), "")
 
 
 def should_hide(name: str, swallow, swallow_with_option, option_down: bool) -> bool:
