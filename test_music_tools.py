@@ -124,11 +124,96 @@ class PlayMusicTests(FakeSpotify):
 
     def test_wakes_spotify_and_retries_when_no_device_is_active(self):
         self.fail_next_play_with = 404
-        self.answers["/me/player/devices"] = {"devices": [{"id": "mac", "is_active": False}]}
+        self.answers["/me/player/devices"] = {"devices": [{"id": "mac", "type": "Computer", "is_active": False}]}
         with mock.patch("music_tools.subprocess.run"):   # don't really open the Spotify app
             reply = music_tools.play_music("Get Lucky")
         self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
         self.assertEqual(self.sent[-1][3], {"device_id": "mac"})
+
+
+MAC = {"id": "mac", "name": "Fives", "type": "Computer", "is_active": False}
+ECHO = {"id": "echo", "name": "Hiyu's Echo Dot", "type": "Speaker", "is_active": True}
+MOVE_TO = "/me/player"                                   # Spotify's "transfer playback" address
+
+
+class WhichDeviceTests(FakeSpotify):
+    """Real bug (Nov 2026): 'play limit break x survivor' came out of the Echo Dot, because that's where
+    Spotify last played. Now music plays on this Mac unless you name a speaker."""
+
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch("music_tools._mac_name", lambda: "Fives")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def moves(self):
+        return [body for method, path, body, _ in self.sent if path == MOVE_TO]
+
+    def test_moves_music_from_the_echo_dot_to_this_mac(self):
+        self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        music_tools.play_music("Get Lucky")
+        self.assertEqual(self.moves(), [{"device_ids": ["mac"], "play": False}])
+        self.assertEqual(self.sent[0][1], MOVE_TO)       # moved BEFORE pressing play
+
+    def test_doesnt_move_when_this_mac_is_already_playing(self):
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        music_tools.play_music("Get Lucky")
+        self.assertEqual(self.moves(), [])
+
+    def test_saying_alexa_plays_on_the_echo_dot(self):
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        reply = music_tools.play_music("Get Lucky", speaker="Alexa")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
+
+    def test_on_my_echo_dot_works_like_my_for_playlists(self):
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        music_tools.play_music("Get Lucky", speaker="my echo dot")
+        self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
+
+    def test_speaker_left_in_the_song_name_is_split_off(self):   # Rex forgot to fill in speaker
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        reply = music_tools.play_music("Get Lucky on my Echo Dot")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.moves(), [{"device_ids": ["echo"], "play": False}])
+
+    def test_a_song_with_on_in_its_name_stays_whole(self):
+        lean = {**GET_LUCKY, "uri": "spotify:track:lean", "name": "Lean On Me", "artists": [{"name": "Bill Withers"}]}
+        self.songs["lean on me"] = lean
+        self.answers["/me/player/devices"] = {"devices": [{**MAC, "is_active": True}, {**ECHO, "is_active": False}]}
+        reply = music_tools.play_music("Lean On Me")
+        self.assertEqual(reply, "Playing Lean On Me by Bill Withers.")
+        self.assertEqual(self.moves(), [])                # "me" isn't a speaker, so it stays on this Mac
+
+    def test_my_computer_means_this_mac(self):              # real bug: "No speaker called 'my computer'"
+        self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        reply = music_tools.play_music("Get Lucky", speaker="my computer")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.moves(), [{"device_ids": ["mac"], "play": False}])
+
+    def test_any_way_of_saying_mac_means_this_mac(self):
+        devices = [MAC, ECHO]
+        for said in ("my mac", "my macbook air", "the imac", "hoyus mac", "my laptop", "Fives"):
+            self.assertEqual(music_tools._named_device(devices, said), MAC, said)
+
+    def test_another_macs_name_beats_this_mac(self):
+        other = {"id": "imac", "name": "Hoyu's iMac", "type": "Computer", "is_active": False}
+        self.assertEqual(music_tools._named_device([MAC, other], "hoyu's imac"), other)
+
+    def test_unknown_speaker_says_what_spotify_can_see(self):
+        self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        reply = music_tools.play_music("Get Lucky", speaker="bathroom")
+        self.assertEqual(reply, "No speaker called 'bathroom'. Spotify can see: Fives, Hiyu's Echo Dot.")
+        self.assertEqual(self.sent, [])                  # nothing was played anywhere
+
+    def test_opens_spotify_here_when_only_the_echo_dot_is_awake(self):
+        self.answers["/me/player/devices"] = {"devices": [ECHO]}
+        def app_opens(*args, **kwargs):                  # pretend "open -a Spotify" makes the Mac show up
+            self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        with mock.patch("music_tools.subprocess.run", app_opens), \
+             mock.patch("music_tools.threading.Thread"):  # don't start the window-hiding thread
+            music_tools.play_music("Get Lucky")
+        self.assertEqual(self.moves(), [{"device_ids": ["mac"], "play": False}])
 
     def test_my_playlist_with_filler_words_plays_yours(self):
         reply = music_tools.play_music("my gym playlist", "playlist", shuffle=True)

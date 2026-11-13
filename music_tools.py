@@ -51,6 +51,9 @@ CHECK_TRIES = 6              # after pressing play, look this many times to see 
 CHECK_EVERY = 0.25           # ...this many seconds apart (so we wait at most ~1.5s)
 WAKE_UP_SECONDS = 10        # how long we wait for the Spotify app to show up after opening it
 HIDE_SPOTIFY_SECONDS = 8    # how long after opening Spotify we keep hiding its window (it pops up while loading)
+ALEXA_WORDS = {"alexa", "echo", "echo dot"}   # what people call an Amazon speaker
+SPEAKER_WORDS = {"speaker", "device"}          # said around a device's name ("the kitchen speaker")
+COMPUTER_WORDS = {"computer", "mac", "macbook", "imac", "laptop", "desktop", "here"}   # any of these = this Mac
 SPOTIFY_BUNDLE_ID = "com.spotify.client"     # macOS's ID for the Spotify app
 MAX_PLAYLISTS = 200         # stop reading your playlists after this many (Spotify hands them out 50 at a time)
 ADD_LIMIT = 100             # Spotify adds at most 100 songs per request
@@ -218,17 +221,82 @@ def _keep_spotify_hidden() -> None:
         time.sleep(0.1)
 
 
+def _devices() -> list[dict]:
+    """Every place Spotify can play right now (this Mac, an Echo Dot, a phone...)."""
+    return spotify_connect.get("/me/player/devices").get("devices") or []
+
+
+def _mac_name() -> str:
+    """This Mac's name (System Settings > General > About). Spotify uses it as the Mac's device name."""
+    return subprocess.run(["scutil", "--get", "ComputerName"], capture_output=True, text=True).stdout.strip()
+
+
+def _this_mac(devices: list[dict]) -> dict | None:
+    """The Spotify app on THIS Mac, from the device list. None if it isn't open."""
+    computers = [d for d in devices if d.get("type") == "Computer"]
+    named = [d for d in computers if d.get("name") == _mac_name()]
+    return (named or computers or [None])[0]        # another computer is a better guess than a speaker
+
+
+def _named_device(devices: list[dict], speaker: str) -> dict | None:
+    """The device you named ("kitchen", "my phone", "alexa"), or None if nothing matches."""
+    wanted = " ".join(w for w in without_filler(speaker).split() if w.lower() not in SPEAKER_WORDS) or speaker
+    if wanted.lower().strip() in ALEXA_WORDS:       # people say "Alexa", Spotify says "Hiyu's Echo Dot"
+        wanted = "echo"
+    name = best_name_match(wanted, [d.get("name", "") for d in devices])
+    if name:                                        # a real device name wins ("fives", or another Mac's name)
+        return next((d for d in devices if d.get("name") == name), None)
+    if COMPUTER_WORDS & set(_words(wanted)):        # "my macbook air", "hoyus mac": Spotify only knows "Fives"
+        return _this_mac(devices)
+    return None
+
+
+def split_speaker(what: str, devices: list[dict]) -> tuple[str, str]:
+    """'jingle bells on my echo dot' -> ('jingle bells', 'my echo dot'). A backup, like says_mine: in case Rex
+    leaves the speaker inside the song name. Only splits if the end is a REAL device, so 'Lean On Me' stays whole."""
+    cut = what.lower().rfind(" on ")                # the LAST " on ", so "Rock On" songs keep their own
+    if cut <= 0:
+        return what, ""
+    song, speaker = what[:cut].strip(), what[cut + len(" on "):].strip()
+    if song and _named_device(devices, speaker):
+        return song, speaker
+    return what, ""
+
+
+def _send_music_to(speaker: str) -> str:
+    """Point Spotify at the right device BEFORE playing: the speaker you named, or else this Mac.
+    Without this, Spotify plays wherever you last listened (that's how a song ended up on the Echo Dot).
+    Returns "" when ready, or a sentence saying what went wrong."""
+    devices = _devices()
+    if speaker.strip():
+        target = _named_device(devices, speaker)
+        if not target:
+            names = ", ".join(d.get("name", "?") for d in devices) or "nothing"
+            return f"No speaker called '{speaker}'. Spotify can see: {names}."
+    else:
+        target = _this_mac(devices)
+        if not target:
+            if not any(d.get("is_active") for d in devices):
+                return ""                           # nothing playing anywhere: _on_a_device opens the app here
+            mac_id = _wake_spotify()                # something else is playing: open Spotify here first
+            if not mac_id:
+                return "Couldn't open Spotify on this Mac. Open the Spotify app and try again."
+            target = {"id": mac_id}
+    if not target.get("is_active"):                 # "transfer playback": move Spotify to that device
+        spotify_connect.call("PUT", "/me/player", {"device_ids": [target["id"]], "play": False})
+    return ""
+
+
 def _wake_spotify() -> str | None:
-    """Open the Spotify app and wait for it to show up as a device. Returns its device id, or None."""
+    """Open the Spotify app and wait for it to show up as a device. Returns this Mac's device id, or None."""
     # -g = don't jump to the front, -j = start hidden. Spotify ignores -j and pops up anyway, so we hide it too.
     subprocess.run(["open", "-g", "-j", "-a", "Spotify"], capture_output=True)
     threading.Thread(target=_keep_spotify_hidden, daemon=True).start()
     deadline = time.time() + WAKE_UP_SECONDS
     while time.time() < deadline:
-        devices = spotify_connect.get("/me/player/devices").get("devices") or []
-        if devices:
-            active = [d for d in devices if d.get("is_active")]
-            return (active or devices)[0].get("id")
+        mac = _this_mac(_devices())                 # wait for THIS Mac, not just any device (like the Echo Dot)
+        if mac:
+            return mac.get("id")
         time.sleep(1)
     return None
 
@@ -277,7 +345,7 @@ def never_crash(fn):
 
 @never_crash
 def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine: bool = False,
-               artist: str = "") -> str:
+               artist: str = "", speaker: str = "") -> str:
     """Play music on Spotify: a song, album, artist, or playlist. Your own playlists are checked first.
 
     Args:
@@ -287,6 +355,8 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
             Leave it empty otherwise, even if you think you know who sings it.
         shuffle: True to shuffle, False to play in order. Leave it out unless the user said which.
         mine: True if the user said "my" or "mine" (their own playlist, never one from all of Spotify).
+        speaker: Where to play, ONLY if the user named a device ("on my echo dot" -> "my echo dot"). Leave it empty
+            otherwise: empty plays on this Mac.
     """
     if not spotify_connect.connected():
         return NOT_CONNECTED
@@ -294,6 +364,8 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
     if kind not in KINDS:
         return f"I can play a song, album, artist, or playlist, not a '{kind}'."
     try:
+        if not speaker and " on " in what.lower():     # backup: Rex left "on my echo dot" in the song name
+            what, speaker = split_speaker(what, _devices())
         item, everything = _find_my_playlist(what) if kind == "playlist" else (None, [])
         if kind == "playlist" and not item and (mine or says_mine(what)):   # "my" never plays a stranger's playlist
             return f"No playlist called '{without_filler(what)}' in your library. Yours: {_list_names(everything)}."
@@ -302,6 +374,9 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
             return f"Couldn't find a {kind} called '{what}'{_by(artist)} on Spotify."
         if shuffle is None and kind != "song":           # you didn't say: use your PLAY ORDER setting
             shuffle = ORDERS.get(settings.get("play_order"))
+        problem = _send_music_to(speaker)
+        if problem:
+            return problem
         if not _press_play(item, shuffle):
             return (f"Spotify said yes to {_describe(item)}, but nothing started playing. "
                     "Try pressing play in the Spotify app, then ask me again.")
