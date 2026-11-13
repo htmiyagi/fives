@@ -123,5 +123,93 @@ class TwoFingerSwipe(unittest.TestCase):
         self.assertEqual(slide(detector, moved_right, 0.8, -0.6), "left")
 
 
+
+FRAME = 1 / 30                      # 30 fps
+
+
+def moved(points, tips=0.0, everything=0.0):
+    """Shift the index + middle fingertips sideways by `tips`, and the whole hand by `everything`."""
+    out = [(x + everything, y) for x, y in points]
+    for i in (g.INDEX_TIP, g.MIDDLE_TIP):
+        out[i] = (out[i][0] + tips, out[i][1])
+    return out
+
+
+def play(detector, frames, start=0.0):
+    """frames: hands (or None = lost frame), one per 1/30 s. Returns every direction the detector fired."""
+    fired = []
+    for i, points in enumerate(frames):
+        t = start + i * FRAME
+        if points is None:
+            detector.miss(t)
+        else:
+            fired += [d for d in [detector.update(t, points)] if d]
+    return fired
+
+
+V = hand("index", "middle")         # ✌️ (hand size 0.5)
+HOLD = [V] * 4                      # holding the ✌️ still: arms the detector
+
+
+def finger_flick(step=0.15, everything=0.0):
+    """The fingertips snap sideways by `step` per frame (relative to the palm) for 3 frames."""
+    return [moved(V, tips=step * k, everything=everything * k) for k in range(1, 4)]
+
+
+def detector():
+    return g.FingerFlickDetector(speed=6.0, palm_max=2.0, seconds=0.15, arm_frames=3, sideways=1.0,
+                                 grace=0.08, cooldown=0.4)
+
+
+class FingerFlick(unittest.TestCase):
+    def test_flick_from_a_held_point_fires_once(self):
+        self.assertEqual(play(detector(), HOLD + finger_flick()), ["right"])
+
+    def test_direction_follows_the_fingers(self):
+        self.assertEqual(play(detector(), HOLD + finger_flick(step=-0.15)), ["left"])
+
+    def test_too_slow_does_not_fire(self):
+        self.assertEqual(play(detector(), HOLD + finger_flick(step=0.03)), [])
+
+    def test_no_point_first_does_not_fire(self):
+        index_only = hand("index")
+        frames = [index_only] * 4 + [moved(index_only, tips=0.15 * k) for k in range(1, 4)]
+        self.assertEqual(play(detector(), frames), [])
+
+    def test_whole_hand_swipe_is_not_a_finger_flick(self):
+        swipe = [moved(V, everything=0.15 * k) for k in range(1, 4)]       # fingers and palm move together
+        self.assertEqual(play(detector(), HOLD + swipe), [])
+
+    def test_fast_fingers_on_a_moving_palm_do_not_fire(self):
+        self.assertEqual(play(detector(), HOLD + finger_flick(step=0.15, everything=0.1)), [])
+
+    def test_one_lost_frame_mid_flick_is_forgiven(self):
+        flick = finger_flick()
+        self.assertEqual(play(detector(), HOLD + [flick[0], None, flick[2]]), ["right"])
+
+    def test_must_point_again_before_the_next_flick(self):
+        det = detector()
+        play(det, HOLD + finger_flick())
+        back = [moved(V, tips=0.45 - 0.15 * k) for k in range(1, 4)]       # fingers swing straight back
+        self.assertEqual(play(det, back, start=7 * FRAME), [])
+
+    def test_debug_line_says_why_it_did_not_fire(self):
+        self.assertIn("lower FINGER_FLICK_SPEED", g.finger_flick_report((4.2, 0.5), 6.0, 2.0))
+        self.assertIn("palm moved too much", g.finger_flick_report((7.0, 3.0), 6.0, 2.0))
+
+
+class OldGesturesIgnoreTheFingerFlick(unittest.TestCase):
+    """GESTURES.md: each new gesture ships with a test that the old ones don't fire on it."""
+
+    def test_palm_swipe_for_the_wheel_ignores_it(self):
+        palm = g.FlickDetector(distance=0.7, seconds=0.45, cooldown=1.0, palm_factor=1.15)
+        self.assertEqual(play(palm, HOLD + finger_flick()), [])
+
+    def test_finger_flick_ignores_an_open_palm_swipe(self):
+        open_hand = hand("index", "middle", "ring", "pinky")
+        swipe = [moved(open_hand, everything=0.15 * k) for k in range(1, 6)]
+        self.assertEqual(play(detector(), [open_hand] * 4 + swipe), [])
+
+
 if __name__ == "__main__":
     unittest.main()

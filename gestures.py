@@ -154,6 +154,90 @@ class LockOn:
         self.target, self._drifting, self._last = None, False, None
 
 
+
+def finger_flick_report(attempt, speed: float, palm_max: float) -> str:
+    """One debug line for a finished attempt: (peak relative speed, palm speed then) vs the thresholds."""
+    peak, palm = attempt
+    why = "" if peak >= speed else "  (flick faster, or lower FINGER_FLICK_SPEED)"
+    if peak >= speed and palm > palm_max:
+        why = "  (palm moved too much: keep it still, or raise FINGER_FLICK_PALM_MAX)"
+    return (f"finger flick reached {peak:.1f} of {speed:g} hand-sizes/s"
+            f" (palm {palm:.1f}, limit {palm_max:g}){why}")
+
+
+class FingerFlickDetector:
+    """Spots a FINGER flick: from a ✌️ point, the index + middle fingertips snap sideways fast RELATIVE TO THE
+    PALM, while the palm itself stays fairly still. (A whole-hand swipe moves the palm too, so it doesn't count.)
+
+    Feed it every frame with update(t, points), and miss(t) on frames with no hand. It answers "left", "right"
+    or None. All speeds are in hand sizes per second (see hand_speeds), measured over the last `seconds`.
+
+    When in doubt, no flick: it needs the ✌️ held for `arm_frames` first, the speed over a short window (not
+    one jumpy frame), a still-enough palm, a mostly sideways motion, and no flick in the last `cooldown`.
+    """
+
+    def __init__(self, speed=6.0, palm_max=2.0, seconds=0.15, arm_frames=3, sideways=1.0, grace=0.08,
+                 cooldown=0.4, pose_factor=1.1):
+        self.speed, self.palm_max, self.seconds = speed, palm_max, seconds
+        self.arm_frames, self.sideways, self.grace = arm_frames, sideways, grace
+        self.cooldown, self.pose_factor = cooldown, pose_factor
+        self.recent = deque()         # (time, points) for the last `seconds`
+        self.pose_frames = 0          # ✌️ seen this many frames in a row
+        self.pointed_at = -1e9        # the last time a held ✌️ was seen (the flick must start soon after)
+        self.last_seen = -1e9         # the last frame with a hand
+        self.last_flick = -1e9
+        self.peak = (0.0, 0.0)        # this attempt's fastest relative speed, and the palm speed at that moment
+        self.last_attempt = None      # ...the attempt that just ended (for the debug print), or None
+
+    def _end_attempt(self) -> None:
+        if self.peak[0] > 0:
+            self.last_attempt = self.peak
+        self.peak = (0.0, 0.0)
+
+    def reset(self) -> None:
+        self._end_attempt()
+        self.recent.clear()
+        self.pose_frames = 0
+        self.pointed_at = -1e9
+
+    def miss(self, t: float) -> None:
+        """A frame with no hand. Short gaps (a blurry frame or two mid-flick) are forgiven."""
+        if t - self.last_seen > self.grace:
+            self.reset()
+
+    def update(self, t: float, points):
+        if t - self.last_seen > self.grace:              # the hand was gone too long: start over
+            self.reset()
+        self.last_seen = t
+        if two_finger_pose(points, self.pose_factor):
+            self.pose_frames += 1
+            if self.pose_frames >= self.arm_frames:
+                self.pointed_at = t
+        else:
+            self.pose_frames = 0                         # (the flick itself may blur the pose: that's fine)
+        armed = t - self.pointed_at <= self.seconds      # a held ✌️ was seen just now
+        if not armed:
+            self._end_attempt()
+            self.recent.clear()
+            return None
+        self.recent.append((t, points))
+        while t - self.recent[0][0] > self.seconds:
+            self.recent.popleft()
+        if len(self.recent) < 3:                         # need at least two steps of motion
+            return None
+        t0, before = self.recent[0]
+        palm_vx, palm_vy, rel_vx, rel_vy = hand_speeds(before, points, t - t0)
+        rel_speed, palm_speed = math.hypot(rel_vx, rel_vy), math.hypot(palm_vx, palm_vy)
+        if rel_speed > self.peak[0]:
+            self.peak = (rel_speed, palm_speed)
+        if (rel_speed >= self.speed and palm_speed <= self.palm_max
+                and abs(rel_vx) >= self.sideways * abs(rel_vy) and t - self.last_flick >= self.cooldown):
+            self.last_flick = t
+            self.reset()                                 # disarm: ✌️ again for the next one
+            return "right" if rel_vx > 0 else "left"
+        return None
+
+
 class FlickDetector:
     """Spots a quick sideways swipe of an open hand (or of another hand shape: pass `pose`).
 

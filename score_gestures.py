@@ -40,7 +40,16 @@ def detectors() -> dict:
                                                 config.POINT_FLICK_COOLDOWN,
                                                 pose=lambda pts: g.two_finger_pose(pts, config.POINT_FACTOR)),
                         True),
+        "finger-flick": ("✌️ finger flick: fingertips fast relative to a still palm (the new one)",
+                         make_finger_flick, True),
     }
+
+
+def make_finger_flick() -> g.FingerFlickDetector:
+    """A finger-flick detector with the current config.py numbers (eyes.py uses this too)."""
+    return g.FingerFlickDetector(config.FINGER_FLICK_SPEED, config.FINGER_FLICK_PALM_MAX, config.FINGER_FLICK_SECONDS,
+                                 config.FINGER_FLICK_ARM_FRAMES, config.FINGER_FLICK_SIDEWAYS,
+                                 config.FINGER_FLICK_GRACE, config.FINGER_FLICK_COOLDOWN, config.POINT_FACTOR)
 
 
 # ---- replaying -------------------------------------------------------------------------------------
