@@ -100,6 +100,14 @@ def two_finger_pose(points, factor: float = 1.1) -> bool:
             and not finger_extended(points, PINKY_TIP, PINKY_PIP, factor))
 
 
+def one_finger_pose(points, factor: float = 1.1) -> bool:
+    """☝️ Only the index finger out; middle, ring and pinky curled (the thumb can do what it likes)."""
+    return (finger_extended(points, INDEX_TIP, INDEX_PIP, factor)
+            and not finger_extended(points, MIDDLE_TIP, MIDDLE_PIP, factor)
+            and not finger_extended(points, RING_TIP, RING_PIP, factor)
+            and not finger_extended(points, PINKY_TIP, PINKY_PIP, factor))
+
+
 def open_palm(points, factor: float = 1.2) -> bool:
     """A flat open hand: all four fingers AND the thumb sticking out, thumb not touching the index.
     Pointing (index only), a pinch, a fist and a relaxed half-curled hand are NOT open palms."""
@@ -261,7 +269,7 @@ class FingerFlickDetector:
         return None
 
 
-# ---- ↺ spin: the ✌️ fingertips draw a fast circle --------------------------------------------------------
+# ---- ↺ spin: the ☝️ index fingertip draws a fast circle --------------------------------------------------------
 SPIN_MAX_STEP = math.radians(90)   # a real circle turns ~10-40° per frame; a bigger jump = cutting across the middle
 
 
@@ -316,13 +324,14 @@ def spin_report(attempt, turn: float, min_radius: float) -> str:
 
 
 class SpinDetector:
-    """Spots a fast ✌️ circle: the index + middle fingertips go (almost) all the way round within `seconds`.
+    """Spots a fast ☝️ circle: the index fingertip goes (almost) all the way round within `seconds`.
+    One finger, not ✌️: a fast ✌️ circle looks just like a finger flick (fast tips, still palm).
 
     Feed it every frame with update(t, points), and miss(t) on frames with no hand. It answers "ccw"
     (counterclockwise as you see it), "cw", or None. The picture must be mirrored (eyes.py flips it), so the
     circle you see yourself draw is the one it measures.
 
-    When in doubt, no spin: it needs the ✌️, at least `turn` degrees of turning inside the last `seconds`
+    When in doubt, no spin: it needs the ☝️, at least `turn` degrees of turning inside the last `seconds`
     (that's what makes it FAST), a circle at least `min_radius` hand sizes big (not jitter), and no spin in
     the last `cooldown`.
     """
@@ -331,8 +340,8 @@ class SpinDetector:
                  roundness=0.4):
         self.turn, self.seconds, self.min_radius, self.roundness = turn, seconds, min_radius, roundness
         self.cooldown, self.grace, self.pose_factor = cooldown, grace, pose_factor
-        self.trail = deque()          # (time, x, y, hand size) of the fingertips' middle, for the last `seconds`
-        self.last_seen = -1e9         # the last frame with a ✌️
+        self.trail = deque()          # (time, x, y, hand size) of the index fingertip, for the last `seconds`
+        self.last_seen = -1e9         # the last frame with a ☝️
         self.last_spin = -1e9
         self.peak = (0.0, 0.0, None)  # this attempt's biggest turn, the circle size then, and why it didn't fire
         self.last_attempt = None      # ...the attempt that just ended (for the debug print), or None
@@ -347,7 +356,7 @@ class SpinDetector:
         self.trail.clear()
 
     def miss(self, t: float) -> None:
-        """A frame with no hand (or no ✌️). Short gaps (a blurry frame mid-spin) are forgiven."""
+        """A frame with no hand (or no ☝️). Short gaps (a blurry frame mid-spin) are forgiven."""
         if t - self.last_seen > self.grace:
             self.reset()
 
@@ -364,12 +373,12 @@ class SpinDetector:
         return None
 
     def update(self, t: float, points):
-        if not two_finger_pose(points, self.pose_factor):
+        if not one_finger_pose(points, self.pose_factor):
             self.miss(t)
             return None
-        self.miss(t)                                     # the ✌️ was gone too long: start over
+        self.miss(t)                                     # the ☝️ was gone too long: start over
         self.last_seen = t
-        x, y = average_point(points, FLICK_TIPS)
+        x, y = points[INDEX_TIP]
         self.trail.append((t, x, y, hand_size(points)))
         while t - self.trail[0][0] > self.seconds:
             self.trail.popleft()

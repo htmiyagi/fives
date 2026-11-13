@@ -244,12 +244,15 @@ if __name__ == "__main__":
     unittest.main()
 
 
-# ---- ↺ spin: ✌️ fingertips draw a fast circle ---------------------------------------------------------
+# ---- ↺ spin: the ☝️ index fingertip draws a fast circle ---------------------------------------------------------
 import math   # noqa: E402  (only the spin tests need it)
 
 
-def circle(degrees, radius=0.15, frames=20, start=V, cx=0.0, cy=0.0):
-    """The whole ✌️ hand travels round a circle of `radius` (picture units; this hand is 0.5 big, so 0.15 =
+ONE = hand("index")                 # ☝️
+
+
+def circle(degrees, radius=0.15, frames=20, start=ONE, cx=0.0, cy=0.0):
+    """The whole ☝️ hand travels round a circle of `radius` (picture units; this hand is 0.5 big, so 0.15 =
     0.3 hand sizes). Positive degrees = counterclockwise AS YOU SEE IT (the picture's y grows DOWN)."""
     out = []
     for i in range(frames):
@@ -261,6 +264,18 @@ def circle(degrees, radius=0.15, frames=20, start=V, cx=0.0, cy=0.0):
 
 def spinner():
     return g.SpinDetector(turn=300, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+
+
+class OneFingerPose(unittest.TestCase):
+    def test_index_alone_is_the_pose(self):
+        self.assertTrue(g.one_finger_pose(ONE))
+
+    def test_two_fingers_is_not(self):
+        self.assertFalse(g.one_finger_pose(V))
+
+    def test_fist_and_open_hand_are_not(self):
+        self.assertFalse(g.one_finger_pose(hand()))
+        self.assertFalse(g.one_finger_pose(hand("index", "middle", "ring", "pinky")))
 
 
 class Winding(unittest.TestCase):
@@ -300,7 +315,7 @@ class Spin(unittest.TestCase):
         self.assertEqual(play(spinner(), circle(360, frames=60)), [])      # 2 s for the loop: too slow
 
     def test_side_to_side_wave_does_not_fire(self):
-        frames = [[(x + 0.25 * math.sin(i * 0.9), y + 0.01 * (i % 2)) for x, y in V] for i in range(24)]
+        frames = [[(x + 0.25 * math.sin(i * 0.9), y + 0.01 * (i % 2)) for x, y in ONE] for i in range(24)]
         self.assertEqual(play(spinner(), frames), [])
 
     def test_tiny_circle_does_not_fire(self):
@@ -313,8 +328,16 @@ class Spin(unittest.TestCase):
         palm = hand("index", "middle", "ring", "pinky")
         self.assertEqual(play(spinner(), circle(360, start=palm)), [])
 
-    def test_straight_finger_flick_does_not_fire(self):
-        self.assertEqual(play(spinner(), HOLD + finger_flick()), [])
+    def test_two_finger_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(360, start=V)), [])      # ✌️ belongs to the finger flick
+
+    def test_spin_is_not_a_finger_flick(self):
+        flick = detector()
+        self.assertEqual(play(flick, [ONE] * 4 + circle(360)), [])
+
+    def test_straight_one_finger_slide_does_not_fire(self):
+        frames = [[(x + 0.04 * i, y) for x, y in ONE] for i in range(20)]
+        self.assertEqual(play(spinner(), frames), [])
 
     def test_two_loops_in_a_row_fire_once_inside_the_cooldown(self):
         self.assertEqual(play(spinner(), circle(720, frames=36)), ["ccw"])
@@ -326,6 +349,17 @@ class Spin(unittest.TestCase):
 
     def test_debug_report_says_why_a_half_circle_missed(self):
         detector = spinner()
-        play(detector, circle(180, frames=10) + [hand()] * 5)            # then the ✌️ ends (past the grace)
+        play(detector, circle(180, frames=10) + [hand()] * 5)            # then the ☝️ ends (past the grace)
         line = g.spin_report(detector.last_attempt, 300, 0.2)
         self.assertIn("SPIN_TURN", line)
+
+
+class SpinAtTheConfigTurn(unittest.TestCase):
+    def test_half_circle_stays_under_250(self):
+        # part-circles over-read a little (a half reads ~235°), so 250 is the floor for SPIN_TURN
+        detector = g.SpinDetector(turn=250, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+        self.assertEqual(play(detector, circle(180, frames=12)), [])
+
+    def test_three_quarter_circle_counts_at_250(self):
+        detector = g.SpinDetector(turn=250, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
+        self.assertEqual(play(detector, circle(290, frames=18)), ["ccw"])

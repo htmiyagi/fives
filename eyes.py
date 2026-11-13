@@ -755,7 +755,7 @@ def main() -> None:
 
     # ✌️ finger flick while locked on = put that window away; a finger flick back = undo (FINGER_FLICK_* in config).
     finger_flick = score_gestures.make_finger_flick() if lock is not None else None
-    # ✌️ ↺ spin: only listens and prints for now (SPIN_* in config). Wired to "restart the song" in a later PR.
+    # ☝️ ↺ spin: only listens and prints for now (SPIN_* in config). Wired to "restart the song" in a later PR.
     spin = score_gestures.make_spin() if getattr(config, "SPIN", False) else None
     # The FIVES window's flip-back is more forgiving: diagonal flicks and a moving palm count (HUB_UNDO_* in config).
     # It watches every frame (so it's warmed up), but only counts while you're bringing the FIVES window back.
@@ -770,7 +770,7 @@ def main() -> None:
         return getattr(config, "HUB_UNDO_SECONDS", 2.0) if name == actions.HUB else config.POINT_UNDO_SECONDS
 
     def check_spin(t, points):
-        """✌️ ↺ spin: feed it this frame and print what it saw. Off while drawing (you draw circles on purpose)."""
+        """☝️ ↺ spin: feed it this frame and print what it saw. Off while drawing (you draw circles on purpose)."""
         if draw_mode:
             spin.reset()
             spin.last_attempt = None

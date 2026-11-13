@@ -283,10 +283,10 @@ FINGER_FLICK_GRACE = 0.08      # forgive lost or blurry frames up to this long m
 FINGER_FLICK_COOLDOWN = 0.4    # seconds after a flick before the next can happen
 FINGER_FLICK_DEBUG = True      # print each attempt's peak speed vs the threshold (and the palm speed) in Terminal
 POINT_UNDO_SECONDS = 1.0       # after flicking a window away: hold ✌️ and finger-flick back within this long to bring it back
-# --- ↺ Spin: ✌️ fingertips draw a fast circle (counterclockwise = restart the song, once it's wired) ---
+# --- ↺ Spin: ☝️ index fingertip draws a fast circle (counterclockwise = restart the song, once it's wired) ---
 # Not wired to anything yet: for now it only prints what it sees. Score it: python score_gestures.py spin
 SPIN = True                    # listen for spins at all (never while draw mode is on)
-SPIN_TURN = 300                # degrees of circle needed (360 = a full loop). Lower = easier, more accidents
+SPIN_TURN = 250                # degrees of circle needed (360 = a full loop). Lower = easier. Below ~250 a half circle counts
 SPIN_SECONDS = 0.8             # ...within this many seconds. This is what makes it FAST. Raise for slower spins
 SPIN_MIN_RADIUS = 0.2          # how big the circle must be, in hand sizes. Raise if jitter or aiming counts
 SPIN_ROUNDNESS = 0.4           # circle's box: short side ÷ long side (1 = perfectly round). Raise if waves count
