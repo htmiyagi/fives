@@ -185,6 +185,12 @@ class WhichDeviceTests(FakeSpotify):
         self.assertEqual(reply, "Playing Lean On Me by Bill Withers.")
         self.assertEqual(self.moves(), [])                # "me" isn't a speaker, so it stays on this Mac
 
+    def test_my_computer_means_this_mac(self):              # real bug: "No speaker called 'my computer'"
+        self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
+        reply = music_tools.play_music("Get Lucky", speaker="my computer")
+        self.assertEqual(reply, "Playing Get Lucky by Daft Punk.")
+        self.assertEqual(self.moves(), [{"device_ids": ["mac"], "play": False}])
+
     def test_unknown_speaker_says_what_spotify_can_see(self):
         self.answers["/me/player/devices"] = {"devices": [MAC, ECHO]}
         reply = music_tools.play_music("Get Lucky", speaker="bathroom")
