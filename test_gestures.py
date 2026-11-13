@@ -211,6 +211,20 @@ class FingerFlick(unittest.TestCase):
     def test_debug_line_says_why_it_did_not_fire(self):
         self.assertIn("lower FINGER_FLICK_SPEED", g.finger_flick_report((4.2, 0.5), 6.0, 2.0))
         self.assertIn("palm moved too much", g.finger_flick_report((7.0, 3.0), 6.0, 2.0))
+        self.assertIn("too up/down", g.finger_flick_report((7.0, 0.5, "updown"), 6.0, 2.0))
+        self.assertIn("cooldown", g.finger_flick_report((7.0, 0.5, "cooldown"), 6.0, 2.0))
+        self.assertIn("FIRED", g.finger_flick_report((7.0, 0.5, "fired"), 6.0, 2.0))
+
+    def test_detector_remembers_why_the_attempt_failed(self):
+        det = detector()
+        play(det, HOLD + finger_flick(step=0.03))                          # far too slow
+        det.miss(10.0)                                                     # hand gone: the attempt ends
+        self.assertEqual(det.last_attempt[2], "slow")
+
+    def test_detector_marks_a_flick_that_fired(self):
+        det = detector()
+        play(det, HOLD + finger_flick())
+        self.assertEqual(det.last_attempt[2], "fired")
 
 
 class OldGesturesIgnoreTheFingerFlick(unittest.TestCase):
