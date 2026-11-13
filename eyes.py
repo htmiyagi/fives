@@ -781,7 +781,7 @@ def main() -> None:
             print(g.spin_report(attempt, config.SPIN_TURN, config.SPIN_MIN_RADIUS) + f"  [{fps:.0f} fps]")
         spin.last_attempt = None
         if spun:
-            print(f"spin {'↺ counterclockwise' if spun == 'ccw' else '↻ clockwise'}: seen! (not wired to anything yet)")
+            print(f"spin ↺ counterclockwise ({spin.method}): seen! (not wired to anything yet)")
     undo = None        # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 

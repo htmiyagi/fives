@@ -292,6 +292,27 @@ def winding_degrees(path) -> float:
     return math.degrees(total)
 
 
+def heading_degrees(path, min_step: float) -> float:
+    """The second way to measure a spin: how far the MOTION DIRECTION turns, frame to frame. Counterclockwise
+    AS YOU SEE IT = positive. Like a car's steering: one full loop of a roundabout = 360°, a straight road = 0,
+    wherever the roundabout is. So it needs no middle, and a loop that drifts sideways still counts.
+    Moves shorter than `min_step` are joined up with the next one (a finger barely moving = noise, no direction)."""
+    total, anchor, before = 0.0, None, None
+    for x, y in path:
+        if anchor is None:
+            anchor = (x, y)
+            continue
+        if distance(anchor, (x, y)) < min_step:
+            continue                                     # too small a move to have a direction: wait for more
+        heading = math.atan2(-(y - anchor[1]), x - anchor[0])   # minus: the picture's y grows DOWN
+        if before is not None:
+            step = (heading - before + math.pi) % (2 * math.pi) - math.pi   # wrap to -180..180°
+            if abs(step) <= SPIN_MAX_STEP:      # bigger = a U-turn (waving back and forth): no direction
+                total += step
+        anchor, before = (x, y), heading
+    return math.degrees(total)
+
+
 def path_radius(path) -> float:
     """The average distance from the path's middle (same middle as winding_degrees)."""
     xs, ys = [x for x, _ in path], [y for _, y in path]
@@ -311,6 +332,7 @@ SPIN_WHY = {
     "small": "circle too small: make it bigger, or lower SPIN_MIN_RADIUS",
     "flat": "too flat, more of a wave than a circle: make it rounder, or lower SPIN_ROUNDNESS",
     "cooldown": "too soon after the last spin (SPIN_COOLDOWN)",
+    "clockwise": "that was clockwise ↻: only counterclockwise ↺ counts",
 }
 
 
@@ -328,17 +350,21 @@ class SpinDetector:
     One finger, not ✌️: a fast ✌️ circle looks just like a finger flick (fast tips, still palm).
 
     Feed it every frame with update(t, points), and miss(t) on frames with no hand. It answers "ccw"
-    (counterclockwise as you see it), "cw", or None. The picture must be mirrored (eyes.py flips it), so the
+    (counterclockwise as you see it) or None. Clockwise never fires. The picture must be mirrored (eyes.py flips it), so the
     circle you see yourself draw is the one it measures.
 
     When in doubt, no spin: it needs the ☝️, at least `turn` degrees of turning inside the last `seconds`
     (that's what makes it FAST), a circle at least `min_radius` hand sizes big (not jitter), and no spin in
     the last `cooldown`.
+
+    method = how the turning is measured: "center" (winding_degrees: round the path's middle) or
+    "heading" (heading_degrees: how far the motion direction turns; ignores moves under `min_step` hand sizes).
     """
 
     def __init__(self, turn=300.0, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1, pose_factor=1.1,
-                 roundness=0.4):
+                 roundness=0.4, method="center", min_step=0.02):
         self.turn, self.seconds, self.min_radius, self.roundness = turn, seconds, min_radius, roundness
+        self.method, self.min_step = method, min_step
         self.cooldown, self.grace, self.pose_factor = cooldown, grace, pose_factor
         self.trail = deque()          # (time, x, y, hand size) of the index fingertip, for the last `seconds`
         self.last_seen = -1e9         # the last frame with a ☝️
@@ -361,8 +387,10 @@ class SpinDetector:
             self.reset()
 
     def _why_not(self, turned: float, path, t: float):
-        """The first check that fails ("turn", "small", "flat", "cooldown"), or None if it passes them all."""
-        if abs(turned) < self.turn:
+        """The first check that fails ("turn", "clockwise", "small", "flat", "cooldown"), or None if all pass."""
+        if turned <= -self.turn:
+            return "clockwise"
+        if turned < self.turn:
             return "turn"
         if path_radius(path) < self.min_radius:
             return "small"
@@ -384,7 +412,7 @@ class SpinDetector:
             self.trail.popleft()
         size = sum(s for *_, s in self.trail) / len(self.trail)
         path = [(px / size, py / size) for _, px, py, _ in self.trail]   # in hand sizes: near or far, same numbers
-        turned = winding_degrees(path)
+        turned = self.measure(path)
         why = self._why_not(turned, path, t)
         if abs(turned) > abs(self.peak[0]):
             self.peak = (turned, path_radius(path), why)
@@ -392,7 +420,13 @@ class SpinDetector:
             return None
         self.last_spin = t
         self.reset()                                     # a fresh circle is needed for the next one
-        return "ccw" if turned > 0 else "cw"
+        return "ccw"
+
+    def measure(self, path) -> float:
+        """Degrees turned (counterclockwise = positive), by whichever method this detector uses."""
+        if self.method == "heading":
+            return heading_degrees(path, self.min_step)
+        return winding_degrees(path)
 
 
 class FlickDetector:

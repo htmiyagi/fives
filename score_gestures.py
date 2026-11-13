@@ -6,6 +6,7 @@ score_gestures.py - replay every recording through a gesture detector and score 
 
 Run:   .venv/bin/python score_gestures.py                    (every detector)
        .venv/bin/python score_gestures.py point-swipe        (just one)
+       .venv/bin/python score_gestures.py spin-compare       (☝️ spin: center vs heading, on recordings/spin + not)
 It uses your current config.py numbers, so: change a number, run again, compare. No camera needed.
 
 Record with Ctrl+Option+F / Ctrl+Option+N while FIVES runs (RECORD_KEYS in config.py).
@@ -53,10 +54,50 @@ def make_finger_flick() -> g.FingerFlickDetector:
                                  config.FINGER_FLICK_GRACE, config.FINGER_FLICK_COOLDOWN, config.POINT_FACTOR)
 
 
-def make_spin() -> g.SpinDetector:
-    """A ☝️ spin detector with the current config.py numbers (eyes.py uses this too)."""
+def make_spin(method=None) -> g.SpinDetector:
+    """A ☝️ spin detector with the current config.py numbers (eyes.py uses this too).
+    method: "center" or "heading"; None = SPIN_METHOD from config."""
     return g.SpinDetector(config.SPIN_TURN, config.SPIN_SECONDS, config.SPIN_MIN_RADIUS, config.SPIN_COOLDOWN,
-                          config.SPIN_GRACE, config.POINT_FACTOR, config.SPIN_ROUNDNESS)
+                          config.SPIN_GRACE, config.POINT_FACTOR, config.SPIN_ROUNDNESS,
+                          method or getattr(config, "SPIN_METHOD", "center"), getattr(config, "SPIN_MIN_STEP", 0.02))
+
+
+SPIN = "spin"                    # the label of the "done right" spin recordings (Ctrl+Option+S)
+SPIN_METHODS = ("center", "heading")
+
+
+def best_turn(detector, recording) -> float:
+    """The most counterclockwise degrees the detector measured at any moment in a recording."""
+    detector.turn = float("inf")     # never fire: firing clears the trail and would cut the peak short
+    best = 0.0
+    for t, points in frames_of(recording):
+        if points is None:
+            detector.miss(t)
+            continue
+        detector.update(t, points)
+        if detector.trail:
+            size = sum(s for *_, s in detector.trail) / len(detector.trail)
+            best = max(best, detector.measure([(x / size, y / size) for _, x, y, _ in detector.trail]))
+    return best
+
+
+def compare_spin() -> None:
+    """Both ways of measuring a spin, side by side: the peak ↺ degrees each saw in every recording,
+    then the usual scores. Uses your config.py numbers; only the method differs."""
+    spin_recs, not_recs = load_all(FOLDER, SPIN), load_all(FOLDER, NOT)
+    if not spin_recs:
+        print(f"No '{SPIN}' recordings yet. Run FIVES, tap Ctrl+Option+S, do ONE ↺ spin, tap it again.")
+        return
+    print(f"peak ↺ degrees seen (needed: {config.SPIN_TURN:g}°, within {config.SPIN_SECONDS:g} s)")
+    print(f"   {'recording':<34}{'center':>8}{'heading':>9}")
+    for group, recs in (("spin (should fire)", spin_recs), ("not (must NOT fire)", not_recs)):
+        print(f"  {group}")
+        for name, rec in recs:
+            center, heading = (best_turn(make_spin(m), rec) for m in SPIN_METHODS)
+            print(f"   {name:<34}{center:>7.0f}°{heading:>8.0f}°")
+    for method in SPIN_METHODS:
+        print(report(f"spin ({method})", f"measured round the {'middle' if method == 'center' else 'motion direction'}",
+                     score(lambda m=method: make_spin(m), spin_recs, not_recs)))
 
 
 # ---- replaying -------------------------------------------------------------------------------------
@@ -155,6 +196,9 @@ def load_all(folder, label) -> list:
 
 
 def main(argv) -> None:
+    if argv == ["spin-compare"]:
+        compare_spin()
+        return
     gesture_recs, not_recs = load_all(FOLDER, GESTURE), load_all(FOLDER, NOT)
     if not gesture_recs and not not_recs:
         print(f"No recordings in {FOLDER} yet. Run FIVES and use Ctrl+Option+F (flick) / Ctrl+Option+N (not).")

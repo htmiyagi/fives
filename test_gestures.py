@@ -308,8 +308,8 @@ class Spin(unittest.TestCase):
     def test_fast_counterclockwise_circle_fires_once(self):
         self.assertEqual(play(spinner(), circle(360)), ["ccw"])
 
-    def test_fast_clockwise_circle_says_cw(self):
-        self.assertEqual(play(spinner(), circle(-360)), ["cw"])
+    def test_fast_clockwise_circle_does_not_fire(self):
+        self.assertEqual(play(spinner(), circle(-360)), [])                # only ↺ counts
 
     def test_slow_circle_does_not_fire(self):
         self.assertEqual(play(spinner(), circle(360, frames=60)), [])      # 2 s for the loop: too slow
@@ -363,3 +363,54 @@ class SpinAtTheConfigTurn(unittest.TestCase):
     def test_three_quarter_circle_counts_at_250(self):
         detector = g.SpinDetector(turn=250, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1)
         self.assertEqual(play(detector, circle(290, frames=18)), ["ccw"])
+
+
+# ---- the second way to measure a spin: how far the MOTION DIRECTION turns (no center needed) -------------
+def loop_path(degrees, steps=24, radius=1.0):
+    """Points round a circle; positive degrees = counterclockwise AS YOU SEE IT (y grows down)."""
+    return [(radius * math.cos(math.radians(degrees * i / steps)), -radius * math.sin(math.radians(degrees * i / steps)))
+            for i in range(steps + 1)]
+
+
+def heading_spinner():
+    return g.SpinDetector(turn=300, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1, method="heading")
+
+
+class Heading(unittest.TestCase):
+    def test_one_clean_loop_is_about_360(self):
+        self.assertAlmostEqual(g.heading_degrees(loop_path(360), min_step=0.01), 360, delta=20)
+
+    def test_clockwise_loop_is_negative(self):
+        self.assertAlmostEqual(g.heading_degrees(loop_path(-360), min_step=0.01), -360, delta=20)
+
+    def test_straight_line_is_zero(self):
+        line = [(0.05 * i, 0.02 * i) for i in range(20)]
+        self.assertAlmostEqual(g.heading_degrees(line, min_step=0.01), 0, delta=1)
+
+    def test_gentle_curve_turns_only_a_little(self):
+        self.assertLess(abs(g.heading_degrees(loop_path(60, radius=3.0), min_step=0.01)), 90)
+
+    def test_tiny_moves_are_ignored(self):
+        # the finger barely moving: a jittery dot that would spin the heading round and round
+        jitter = [(0.001 * math.cos(i * 2.0), 0.001 * math.sin(i * 2.0)) for i in range(30)]
+        self.assertEqual(g.heading_degrees(jitter, min_step=0.01), 0)
+
+    def test_a_drifting_loop_still_counts(self):
+        # the whole hand slides right while circling: the path's middle moves, the heading doesn't care
+        drift = [(x + 0.08 * i, y) for i, (x, y) in enumerate(loop_path(360))]
+        self.assertGreater(g.heading_degrees(drift, min_step=0.01), 300)
+
+
+class HeadingSpin(unittest.TestCase):
+    def test_fast_counterclockwise_loop_fires(self):
+        self.assertEqual(play(heading_spinner(), circle(360)), ["ccw"])
+
+    def test_clockwise_loop_does_not_fire(self):
+        self.assertEqual(play(heading_spinner(), circle(-360)), [])
+
+    def test_straight_line_does_not_fire(self):
+        frames = [[(x + 0.02 * i, y) for x, y in ONE] for i in range(20)]
+        self.assertEqual(play(heading_spinner(), frames), [])
+
+    def test_gentle_curve_does_not_fire(self):
+        self.assertEqual(play(heading_spinner(), circle(90, radius=0.6)), [])
