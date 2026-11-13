@@ -42,6 +42,8 @@ def setting(name, default):
 # ---- look (tweak freely) ---------------------------------------------------------------------------
 BG_ALPHA = 0.88            # how dark the window is. Lower = see more of what's behind it (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off
+TARGETED_GLOW = 1.4        # glow multiplier while you point at the window with two fingers (1 = no change)
+TARGET_BAND = 6            # ...plus a soft band of light this wide along the edge (0 = none)
 FOLDER = setting("SKETCH_FOLDER", "~/Documents/FIVES Notes")
 AUTOSAVE = setting("SKETCH_AUTOSAVE", True)         # save the marked-up copy whenever you put the window away
 CLICK_AWAY = setting("SKETCH_CLICK_AWAY", True)     # click anywhere outside the window = put it away (like a popover)
@@ -76,6 +78,7 @@ class State:
     hover = None
     flash = ("", 0.0)
     scale = 1.0                # window width / design width
+    boost = 1.0                # glow multiplier: TARGETED_GLOW while eyes.py says you're pointing at us
     images = {}                # drawn page pictures: (version, page, px) -> NSImage
     opening = False
     visible = False
@@ -252,8 +255,9 @@ def main() -> None:
         NSGraphicsContext.saveGraphicsState()
         sh = NSShadow.alloc().init()
         sh.setShadowOffset_((0, 0))
-        sh.setShadowBlurRadius_(radius * GLOW * S.scale)
-        sh.setShadowColor_(color(c, min(1.0, alpha * GLOW)))
+        strength = GLOW * S.boost                     # brighter while you point at the window
+        sh.setShadowBlurRadius_(radius * strength * S.scale)
+        sh.setShadowColor_(color(c, min(1.0, alpha * strength)))
         sh.set()
 
     def glow_off():
@@ -524,6 +528,8 @@ def main() -> None:
             line(k[0], k[1], k[0] + 40 * k[2], k[1], WHITE, 1.6, 0.7)
             line(k[0], k[1], k[0], k[1] + 40 * k[3], WHITE, 1.6, 0.7)
         poly(shape_points(), stroke=BLUE, width=1.5, stroke_alpha=0.85, glow=8)
+        if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
+            poly(shape_points(), stroke=BLUE, width=TARGET_BAND, stroke_alpha=0.35, glow=22)
 
         # --- title
         box((48, 36, 4, 36), fill=BLUE, glow=6)
@@ -816,6 +822,9 @@ def main() -> None:
                 AppHelper.callAfter(controller.hide)
             elif word == "snap":
                 S.key_snap = rest.strip() == "1"
+            elif word == "glow":                           # you're pointing at us (1), or not any more (0)
+                S.boost = TARGETED_GLOW if rest.strip() == "1" else 1.0
+                AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "penmode":
                 S.pen_mode = rest.strip()
                 AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))

@@ -654,7 +654,7 @@ def main() -> None:
     elif config.DRAW_HOTKEY:
         draw_watcher = hotkey.HotkeyWatcher(config.DRAW_HOTKEY)
         draw_watcher.start()
-    panel = PanelLink() if config.PANEL else None
+    panel = PanelLink(listen=True) if config.PANEL else None    # listen: it says where it is (for pointing)
     sketch = PanelLink("sketch.py", hidden=True, listen=True) if use_sketch else None
     sketch_snap_sent = None       # the last snap-pen state we told the sketch window about
     actions.connect_window("music", panel)       # so actions like hide_music can reach these windows
@@ -688,7 +688,7 @@ def main() -> None:
         if pt is None:
             return None
         x, y = pt
-        for link in (sketch,):                  # add future windows here
+        for link in (panel, sketch):            # add future windows here
             f = getattr(link, "frame", None) if link is not None else None
             if f and f[0] <= x <= f[0] + f[2] and f[1] <= y <= f[1] + f[3]:
                 return link
