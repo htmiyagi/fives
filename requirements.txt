@@ -5,3 +5,4 @@ pyautogui
 pynput
 pymupdf
 torch
+parsedatetime==2.6
