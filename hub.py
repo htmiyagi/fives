@@ -53,6 +53,8 @@ from Quartz import (CGContextBeginTransparencyLayer, CGContextEndTransparencyLay
 import eyes_link
 import settings
 import spotify_connect as sp
+import wheel                   # only for its wedge shapes and icons (the WHEEL page's preview)
+import wheel_logic
 import warmup
 
 HERE = Path(__file__).resolve().parent
@@ -92,6 +94,7 @@ TABS = {name: (150 + i * 188, 14, 176, 56) for i, (name, _) in enumerate(TAB_ORD
 CLOSE = (W - 44, 42, 17)         # centre x, centre y, radius
 GRIP = (W - 36, H - 36, 36, 36)
 ROWS = [                         # the SETTINGS tab: (settings.py key, title, what it means)
+    ("wheel_order", "WHEEL", ""),        # not a pick-one: an EDIT button that opens the WHEEL page
     ("music_app", "DEFAULT MUSIC APP", "Which app \"play some music\" opens"),
     ("spotify", "SPOTIFY", ""),          # not a saved choice: a CONNECT button (see spotify_connect.py)
     ("play_order", "PLAY ORDER", "What \"play my playlist\" does if you don't say"),
@@ -122,6 +125,9 @@ class State:
     brain = "checking"           # "ready" / "missing" (Ollama is on, model isn't downloaded) / "asleep" / "checking"
     quitting = False
     settings_scroll = 0.0        # how far the SETTINGS rows are scrolled down
+    wheel_page = False           # the WHEEL page is showing on the SETTINGS tab (EDIT opens it, DONE closes it)
+    drag = None                  # which wedge row is being dragged on the WHEEL page (its index), or None
+    drag_y = 0.0                 # where the pointer is while dragging it (design units)
 
 
 S = State()
@@ -353,6 +359,11 @@ def icon(name, cx, cy, c):
         for dy, knob in ((-5, 4), (5, -4)):
             stroke([(cx - 9, cy + dy), (cx + 9, cy + dy)], c, 2.0)
             oval(cx + knob, cy + dy, 3.6, fill=c)
+    elif name == "wheel_order":                          # a ring cut into wedges
+        oval(cx, cy, 11, stroke=c, width=2.0)
+        oval(cx, cy, 3.4, fill=c)
+        for a in (0, 120, 240):
+            stroke([wheel_logic.point_at(a, 5.5, cx, cy), wheel_logic.point_at(a, 11, cx, cy)], c, 2.0)
     elif name == "music_app":                            # a note
         oval(cx - 4, cy + 8, 5.5, 4.5, fill=c)
         stroke([(cx + 1, cy + 8), (cx + 1, cy - 11), (cx + 10, cy - 7)], c, 2.2)
@@ -664,9 +675,183 @@ def draw_spotify():
         text_mid(label, rect[0] + rect[2] / 2, rect[1] + (rect[3] - size * 1.28) / 2, size, WHITE if (hov or main) else PALE, True, 2.5)
 
 
+# ---- the WHEEL page (EDIT on the WHEEL row): reorder, remove and add the wheel's wedges --------------
+# Every change saves right away to settings.json ("wheel_order"). wheel.py reads it each time the wheel opens,
+# and eyes.py reads it every frame for Option+number, so both follow along with no restart.
+LIST_X, LIST_Y, LIST_W = 56, 196, 470    # the list of wedges (left half of the page)
+WROW_H, WROW_STEP = 42, 48               # one wedge row's height, and from one row's top to the next
+SPARE_GAP = 40                           # room for the "NOT ON THE WHEEL" heading between the two lists
+PREVIEW = (760, 340, 150, 62)            # the live preview wheel: centre x, centre y, outer edge, hole
+WHEEL_DONE = (W - 56 - 130, 98, 130, 40)
+WHEEL_RESET = (PREVIEW[0] - 130, 556, 260, 44)
+
+
+def wheel_order():
+    """The saved order, cleaned up so the rules always hold (same as wheel.py and eyes.py read it)."""
+    return wheel_logic.clean_order(settings.get("wheel_order"))
+
+
+def save_wheel(order):
+    settings.put("wheel_order", order)
+
+
+def wedge_row_rect(i):
+    return (LIST_X, LIST_Y + i * WROW_STEP, LIST_W, WROW_H)
+
+
+def spare_row_rect(on_wheel, j):
+    """Row j of the "NOT ON THE WHEEL" list, which starts under the `on_wheel` wedge rows."""
+    return (LIST_X, LIST_Y + on_wheel * WROW_STEP + SPARE_GAP + j * WROW_STEP, LIST_W, WROW_H)
+
+
+def small_button(row):
+    """The [–] / [+] button at the right end of a row."""
+    x, y, w, h = row
+    return (x + w - 12 - 44, y + (h - 30) / 2, 44, 30)
+
+
+def drop_index(count):
+    """Which slot the dragged row would land in, from where the pointer is right now."""
+    slot = round((S.drag_y - LIST_Y - WROW_H / 2) / WROW_STEP)
+    return max(0, min(slot, count - 1))
+
+
+def shown_order(order):
+    """The order as it would be if you let go now, so the list and the preview move while you drag."""
+    if S.drag is None:
+        return order
+    return wheel_logic.move(order, S.drag, drop_index(len(order)))
+
+
+def wheel_page_buttons():
+    """Everything clickable on the WHEEL page. The small [–] / [+] come before the rows they sit on, so a click
+    on them counts as the button, not as grabbing the row."""
+    order = wheel_order()
+    out = [("wheel:done", WHEEL_DONE), ("wheel:reset", WHEEL_RESET)]
+    for i, name in enumerate(order):
+        if wheel_logic.can_remove(order, name):
+            out.append((f"wheel:remove:{name}", small_button(wedge_row_rect(i))))
+        out.append((f"wheel:grab:{i}", wedge_row_rect(i)))
+    if wheel_logic.can_add(order):
+        for j, name in enumerate(wheel_logic.missing(order)):
+            out.append((f"wheel:add:{name}", small_button(spare_row_rect(len(order), j))))
+    return out
+
+
+def start_drag(button, y):
+    """Mouse went down on a wedge row: pick it up."""
+    S.drag, S.drag_y, S.dirty = int(button.split(":")[2]), y, True
+
+
+def finish_drag():
+    """Mouse came up: drop the row where it is and save the new order (if it really moved)."""
+    order = wheel_order()
+    moved = wheel_logic.move(order, S.drag, drop_index(len(order)))
+    S.drag, S.dirty = None, True
+    if moved != order:
+        save_wheel(moved)
+
+
+def draw_small_button(rect, mark, name, enabled):
+    hov = enabled and S.hover == name
+    plate(rect, fill=BLUE, fill_alpha=(0.55 if hov else 0.14) if enabled else 0.04, stroke=WHITE if hov else SKY,
+          width=1.2, stroke_alpha=0.9 if enabled else 0.25, glow=6 if hov else 0)
+    text_mid(mark, rect[0] + rect[2] / 2, rect[1] + 3, 20, WHITE if enabled else GREY, True, 0.0, 1.0 if enabled else 0.4)
+
+
+def draw_wedge_row(order, name, i, rect, lifted=False):
+    """One wedge on the wheel: grip lines, its Option+number, icon, name, and [–] (Settings gets a lock note)."""
+    x, y, w, h = rect
+    hov = S.drag is None and S.hover == f"wheel:grab:{i}"
+    pill(rect, (8, 14, 8, 8), "br", fill=BLUE, fill_alpha=0.30 if lifted else 0.15 if hov else 0.09,
+         stroke=WHITE if lifted else SKY, width=1.0, stroke_alpha=0.9 if lifted else 0.5 if hov else 0.32,
+         glow=10 if lifted else 0)
+    for dy in (-5, 0, 5):                                     # the ≡ grip: "you can drag me"
+        stroke([(x + 14, y + h / 2 + dy), (x + 26, y + h / 2 + dy)], SKY, 1.6, 0.8)
+    text(f"⌥{i + 1}", x + 38, y + 11, 16, SKY, True, 1.0)
+    wheel.icon(name, x + 96, y + h / 2, WHITE, 0.6)
+    text(wheel_logic.WINDOWS[name], x + 122, y + 10, 18, WHITE, True, 3.0)
+    if name == wheel_logic.MUST_KEEP:
+        note = "ALWAYS ON"
+        text(note, x + w - 16 - text_width(note, 13, True, 2.0), y + 13, 13, GREY, True, 2.0)
+    else:
+        draw_small_button(small_button(rect), "–", f"wheel:remove:{name}", wheel_logic.can_remove(order, name))
+
+
+def draw_spare_row(order, name, rect):
+    """A window that's NOT on the wheel, with [+] to put it back (grayed out when the wheel is full)."""
+    x, y, w, h = rect
+    pill(rect, (8, 14, 8, 8), "br", fill=BLUE, fill_alpha=0.04, stroke=SKY, width=1.0, stroke_alpha=0.18)
+    wheel.icon(name, x + 96, y + h / 2, GREY, 0.6)
+    text(wheel_logic.WINDOWS[name], x + 122, y + 10, 18, GREY, True, 3.0)
+    draw_small_button(small_button(rect), "+", f"wheel:add:{name}", wheel_logic.can_add(order))
+
+
+def draw_wheel_preview(order, lit):
+    """A small copy of the real wheel, numbered like Option+number. `lit` = the wedge to highlight (or None)."""
+    cx, cy, outer, inner = PREVIEW
+    oval(cx, cy, outer + 12, fill=DEEP, fill_alpha=0.55, stroke=SKY, width=1.0, stroke_alpha=0.35)
+    count = len(order)
+    for i, name in enumerate(order):
+        on = i == lit
+        paint(path(wheel.wedge_points(i, count, inner, outer, cx, cy)), fill=BLUE, fill_alpha=0.55 if on else 0.18,
+              stroke=WHITE if on else SKY, width=1.2, stroke_alpha=0.95 if on else 0.5, glow=10 if on else 0)
+        middle = wheel_logic.wedge_middle(i, count)
+        wheel.icon(name, *wheel_logic.point_at(middle, (inner + outer) / 2, cx, cy), WHITE, 0.75)
+        nx, ny = wheel_logic.point_at(middle, outer + 26, cx, cy)
+        text_mid(str(i + 1), nx, ny - 9, 15, WHITE if on else SKY, True, 0.0)
+    text_mid("LIVE", cx, cy - 9, 14, GREY, True, 3.0)
+
+
+def draw_page_button(name, rect, label):
+    hov = S.hover == name
+    plate(rect, fill=BLUE, fill_alpha=0.30 if hov else 0.06, stroke=WHITE if hov else SKY, width=1.3,
+          stroke_alpha=0.95 if hov else 0.5)
+    text_mid(label, rect[0] + rect[2] / 2, rect[1] + (rect[3] - 17) / 2, 13, WHITE if hov else PALE, True, 2.5)
+
+
+def draw_wheel_page():
+    page()
+    text("WHEEL", 58, 104, 26, WHITE, True, 6.0, glow=6)
+    text("drag a row to move it. Changes save right away", 60, 138, 13, PALE, False, 1.0, 0.8)
+    order = wheel_order()
+    shown = shown_order(order)
+    full = "" if wheel_logic.can_add(order) else f"   ({wheel_logic.MAX_WEDGES} MAX, THE WHEEL IS FULL)"
+    text("ON THE WHEEL" + full, LIST_X + 4, LIST_Y - 24, 13, GREY, True, 2.5)
+    landing = drop_index(len(order)) if S.drag is not None else None
+    for i, name in enumerate(shown):
+        if i == landing:                                     # the empty slot the dragged row will drop into
+            pill(wedge_row_rect(i), (8, 14, 8, 8), "br", stroke=SKY, width=1.0, stroke_alpha=0.35)
+        else:
+            draw_wedge_row(shown, name, i, wedge_row_rect(i))
+    spares = wheel_logic.missing(order)
+    if spares:
+        text("NOT ON THE WHEEL", LIST_X + 4, LIST_Y + len(order) * WROW_STEP + SPARE_GAP - 26, 13, GREY, True, 2.5)
+    for j, name in enumerate(spares):
+        draw_spare_row(order, name, spare_row_rect(len(order), j))
+    if landing is not None:                                  # the dragged row floats under the pointer, on top
+        top = max(LIST_Y - 8, min(S.drag_y - WROW_H / 2, LIST_Y + (len(order) - 1) * WROW_STEP + 8))
+        draw_wedge_row(shown, shown[landing], landing, (LIST_X, top, LIST_W, WROW_H), lifted=True)
+    draw_wheel_preview(shown, landing if landing is not None else hovered_wedge(order))
+    draw_page_button("wheel:done", WHEEL_DONE, "DONE")
+    draw_page_button("wheel:reset", WHEEL_RESET, "RESET TO DEFAULT")
+
+
+def hovered_wedge(order):
+    """The wedge whose row (or [–]) is under the pointer, so the preview can light it up."""
+    hov = S.hover or ""
+    if hov.startswith("wheel:grab:"):
+        return int(hov.split(":")[2])
+    if hov.startswith("wheel:remove:") and hov[13:] in order:
+        return order.index(hov[13:])
+    return None
+
+
 def draw_settings():
     if sp.setup.step != "closed":
         return draw_spotify()
+    if S.wheel_page:
+        return draw_wheel_page()
     page()
     text("SETTINGS", 58, 104, 26, WHITE, True, 6.0, glow=6)
     text("your choices are saved on this Mac", 60, 138, 13, PALE, False, 1.0, 0.8)
@@ -686,9 +871,16 @@ def draw_settings():
             plate(rect, fill=BLUE, fill_alpha=(0.30 if hov else 0.06) if name else (0.75 if hov else 0.50),
                   stroke=WHITE if hov else SKY, width=1.3, stroke_alpha=0.95, glow=0 if name else (10 if hov else 5))
             text_mid("DISCONNECT" if name else "CONNECT", rect[0] + rect[2] / 2, rect[1] + 12, 13, WHITE, True, 2.5)
+        if key == "wheel_order":
+            count = len(wheel_order())
+            about = f"{count} wedges. Option+1 to Option+{count} open them"
+            rect, hov = connect_rect(i), S.hover == "wheel:edit"
+            plate(rect, fill=BLUE, fill_alpha=0.75 if hov else 0.50, stroke=WHITE if hov else SKY, width=1.3,
+                  stroke_alpha=0.95, glow=10 if hov else 5)
+            text_mid("EDIT", rect[0] + rect[2] / 2, rect[1] + 12, 13, WHITE, True, 2.5)
         text(title, x + 90, y + 13, 19, WHITE, True, 3.0)
         text(about, x + 91, y + 42, 14, PALE, False, 0.8, 0.9)
-        if key == "spotify":
+        if key in ("spotify", "wheel_order"):
             continue
         if key in settings.CHOICES:
             rects = choice_rects(i, key)
@@ -837,11 +1029,15 @@ def buttons():
         out.append(("restart", RESTART))
     if S.tab == "settings" and sp.setup.step != "closed":
         out += [(name, rect) for name, rect, _, _ in spotify_buttons()]
+    elif S.tab == "settings" and S.wheel_page:
+        out += wheel_page_buttons()
     elif S.tab == "settings":
         rows = []
         for i, (key, _, _) in enumerate(ROWS):
             if key == "spotify":
                 rows.append(("connect", connect_rect(i)))
+            elif key == "wheel_order":
+                rows.append(("wheel:edit", connect_rect(i)))
             elif key in settings.CHOICES:
                 rows += [(f"set:{key}:{option}", rect) for option, rect in choice_rects(i, key)]
             else:
@@ -881,6 +1077,8 @@ def press(name):
         sp.disconnect() if sp.connected() else sp.start()
     elif name.startswith("sp:"):
         sp.press(name[3:])
+    elif name.startswith("wheel:"):
+        press_wheel(name[6:])
     elif name.startswith("set:"):
         _, key, option = name.split(":", 2)
         settings.put(key, option)
@@ -890,6 +1088,20 @@ def press(name):
     elif name == "config":
         subprocess.run(["open", "-e", str(HERE / "config.py")])
     S.dirty = True
+
+
+def press_wheel(what):
+    """A click on the WHEEL page (or its EDIT button). Dragging rows is handled by start_drag / finish_drag."""
+    if what == "edit":
+        S.wheel_page = True
+    elif what == "done":
+        S.wheel_page = False
+    elif what == "reset":
+        save_wheel(list(wheel_logic.DEFAULT_ORDER))
+    elif what.startswith("remove:"):
+        save_wheel(wheel_logic.remove(wheel_order(), what[7:]))
+    elif what.startswith("add:"):
+        save_wheel(wheel_logic.add(wheel_order(), what[4:]))
 
 
 def key_pressed(ch):
@@ -962,7 +1174,7 @@ class HubView(NSView):
 
     def scrollWheel_(self, event):
         """Trackpad, mouse wheel, or the hand-tracking scroll: moves the SETTINGS rows."""
-        if S.tab != "settings" or sp.setup.step != "closed":
+        if S.tab != "settings" or sp.setup.step != "closed" or S.wheel_page:
             return
         dy = event.scrollingDeltaY()
         scroll_settings(-dy if event.hasPreciseScrollingDeltas() else -dy * WHEEL_STEP)
@@ -977,8 +1189,13 @@ class HubView(NSView):
         S.start_mouse = NSEvent.mouseLocation()
         S.start_origin = self.window().frame().origin
         S.start_size = self.window().frame().size
+        if (S.pressed or "").startswith("wheel:grab:"):     # a wedge row on the WHEEL page: pick it up
+            start_drag(S.pressed, where(self, event)[1])
 
     def mouseDragged_(self, event):
+        if S.drag is not None:                              # carrying a wedge row: it follows the pointer
+            S.drag_y, S.dirty = where(self, event)[1], True
+            return
         now = NSEvent.mouseLocation()
         dx, dy = now.x - S.start_mouse.x, now.y - S.start_mouse.y
         if S.mode == "move":
@@ -993,6 +1210,14 @@ class HubView(NSView):
                 print("hub resize error:", e)
 
     def mouseUp_(self, event):
+        if S.drag is not None:                              # let go of a wedge row: drop it there and save
+            S.pressed = S.mode = None
+            try:
+                finish_drag()
+            except Exception as e:
+                S.drag = None
+                print("hub wheel drag:", e)
+            return
         name, S.pressed, S.mode = S.pressed, None, None
         if name and name != "grip" and hit(where(self, event)) == name:
             try:

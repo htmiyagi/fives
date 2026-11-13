@@ -60,6 +60,44 @@ def clean_order(order) -> list[str]:
     return seen
 
 
+# The WHEEL page in Settings (hub.py) edits the order with these. Each returns a NEW list, and asking for
+# something the rules don't allow (remove Settings, add a 9th wedge) just gives the same order back.
+def move(order, old_index: int, new_index: int) -> list[str]:
+    """Take the wedge at old_index out and put it back at new_index (clamped to the list)."""
+    out = list(order)
+    name = out.pop(old_index)
+    out.insert(max(0, min(new_index, len(out))), name)
+    return out
+
+
+def can_remove(order, name: str) -> bool:
+    """Settings never comes off, and there's always at least one other wedge."""
+    return name in order and name != MUST_KEEP and len(order) > 2
+
+
+def remove(order, name: str) -> list[str]:
+    return [n for n in order if n != name] if can_remove(order, name) else list(order)
+
+
+def missing(order) -> list[str]:
+    """The windows that aren't on the wheel right now (the [+] list), in the default order."""
+    return [name for name in WINDOWS if name not in order]
+
+
+def can_add(order) -> bool:
+    return len(order) < MAX_WEDGES
+
+
+def add(order, name: str) -> list[str]:
+    """Put a window back on the wheel: just before Settings if Settings is last (so Settings keeps being the
+    last Option+number), otherwise at the end (so nobody else's Option+number shifts)."""
+    if name not in WINDOWS or name in order or not can_add(order):
+        return list(order)
+    if order and order[-1] == MUST_KEEP:
+        return list(order[:-1]) + [name, MUST_KEEP]
+    return list(order) + [name]
+
+
 # ---------------------------------------------------------------------------
 # 2. Geometry. Angles are in degrees, measured clockwise from straight up (like a clock).
 #    Points use screen-style coordinates: x to the right, y DOWN (a "flipped" view).
