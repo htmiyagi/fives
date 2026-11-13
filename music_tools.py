@@ -378,6 +378,10 @@ def play_music(what: str, kind: str = "song", shuffle: bool | None = None, mine:
         if problem:
             return problem
         if not _press_play(item, shuffle):
+            refused_by = _refused_on_speaker(item)
+            if refused_by:
+                return (f"{refused_by} can't play {_describe(item)}: Spotify won't allow that song there. "
+                        "Want it on this Mac instead?")
             return (f"Spotify said yes to {_describe(item)}, but nothing started playing. "
                     "Try pressing play in the Spotify app, then ask me again.")
     except SpotifyError as err:
@@ -401,6 +405,20 @@ def _start(item: dict, shuffle: bool | None, device_id: str | None) -> None:
     # A song is played by itself; an album / artist / playlist is played as a "context" (the whole thing)
     body = {"uris": [item["uri"]]} if item.get("type") == "track" else {"context_uri": item["uri"]}
     spotify_connect.call("PUT", "/me/player/play", body, **_with_device({}, device_id))
+
+
+def _refused_on_speaker(item: dict) -> str:
+    """Did a speaker refuse the song? Some songs aren't allowed on some speakers (seen Nov 2026: Mariah Carey's
+    All I Want for Christmas on an Echo Dot). The speaker skips to the next song in the queue instead, which is
+    how Wham's Last Christmas snuck in. If so, pause the song that snuck in and return the speaker's name, else ""."""
+    player = spotify_connect.get("/me/player") or {}
+    device = player.get("device") or {}
+    now = (player.get("item") or {}).get("uri")
+    if device.get("type") == "Computer" or not now or now == item.get("uri"):
+        return ""                                   # on a Mac, or the right song: not a speaker refusing it
+    if player.get("is_playing"):
+        spotify_connect.call("PUT", "/me/player/pause")
+    return device.get("name") or "That speaker"
 
 
 def _instead(item: dict, artist: str) -> str:
