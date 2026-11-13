@@ -700,15 +700,15 @@ def main() -> None:
         glowing[0] = target
 
     # ✌️ swipe while locked on = put that window away. Its own short cooldown, or it would block the undo swipe.
-    point_flick = (g.FlickDetector(config.FLICK_DISTANCE, config.FLICK_SECONDS, config.POINT_FLICK_COOLDOWN,
+    point_flick = (g.FlickDetector(config.POINT_FLICK_DISTANCE, config.FLICK_SECONDS, config.POINT_FLICK_COOLDOWN,
                                    pose=lambda pts: g.two_finger_pose(pts, config.POINT_FACTOR))
                    if lock is not None else None)
     undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 
-    def put_away(swipe):
+    def put_away(swipe, target):
         """✌️ swipe while locked on: hide that window and open the undo second. Returns its name."""
-        name = window_names.get(id(lock.target))
+        name = window_names.get(id(target))
         lock.release()
         aim_at(None)                                    # stop glowing first, so it comes back un-lit
         print(f"✌️ swipe {swipe}: {actions.run('hide_window', window=name)}"
@@ -969,11 +969,15 @@ def main() -> None:
                     locked = lock.update(t, window_under(last_sent) if pointing else None)
                     aim_at(locked)
                     swipe = point_flick.update(t, points)
+                    if getattr(config, "POINT_DEBUG", False) and point_flick.last_best >= 0.15:
+                        print(f"✌️ swipe reached {point_flick.last_best:.2f} of {config.POINT_FLICK_DISTANCE} hand-sizes needed")
+                    point_flick.last_best = 0.0
+                    swiped = lock.recent(t, config.POINT_SWIPE_GRACE) if swipe else None   # what the swipe was aimed at
                     if swipe and undoing(t):
                         if take_back(swipe):
                             undo = None
-                    elif swipe and lock.target is not None:
-                        name = put_away(swipe)
+                    elif swiped is not None:
+                        name = put_away(swipe, swiped)
                         undo = (name, swipe, t + config.POINT_UNDO_SECONDS)
                         swiped_sketch = swiped_sketch or name == "sketch"           # leave draw mode too
                         flash_text, flash_until = f"{name.upper()} PUT AWAY", time.monotonic() + 1.0

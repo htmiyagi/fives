@@ -91,6 +91,8 @@ class LockOn:
         self._drifting = False    # True while the aim is somewhere other than the target...
         self._other = None        # ...where it is (a window, or None = empty space)...
         self._since = 0.0         # ...and since when
+        self._last = None         # the window we let go of most recently...
+        self._last_at = -1e9      # ...and when
 
     def update(self, t: float, seen):
         """Returns the locked window (or None)."""
@@ -103,12 +105,20 @@ class LockOn:
             if not self._drifting or seen != self._other:   # started looking somewhere new: start the clock
                 self._drifting, self._other, self._since = True, seen, t
             if t - self._since >= self.hold:       # been away long enough: follow it
+                self._last, self._last_at = self.target, t
                 self.target, self._drifting = seen, False
         return self.target
 
+    def recent(self, t: float, within: float):
+        """The locked window, or the one we let go of less than `within` seconds ago. A quick swipe carries
+        the cursor off the window before the swipe is finished, and it should still count for that window."""
+        if self.target is not None:
+            return self.target
+        return self._last if t - self._last_at <= within else None
+
     def release(self) -> None:
         """Let go right away (for example, the window was just swiped away)."""
-        self.target, self._drifting = None, False
+        self.target, self._drifting, self._last = None, False, None
 
 
 class FlickDetector:

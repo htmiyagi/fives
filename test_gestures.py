@@ -72,6 +72,27 @@ class LockOnStickiness(unittest.TestCase):
         lock.release()
         self.assertIsNone(lock.target)
 
+    def test_recent_remembers_a_window_just_left(self):
+        # a fast swipe: the cursor leaves the window and the lock lets go before the swipe is finished
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.update(0.1, None)
+        lock.update(0.45, None)                        # let go at 0.45
+        self.assertEqual(lock.recent(0.7, within=0.5), "music")
+
+    def test_recent_forgets_after_the_grace(self):
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.update(0.1, None)
+        lock.update(0.45, None)
+        self.assertIsNone(lock.recent(1.0, within=0.5))
+
+    def test_recent_forgets_a_window_that_was_put_away(self):
+        lock = g.LockOn(hold=0.3)
+        lock.update(0.0, "music")
+        lock.release()                                 # swiped away: don't swipe it again
+        self.assertIsNone(lock.recent(0.1, within=0.5))
+
 
 def slide(detector, points, start_t, dx_total, frames=7, step=0.05):
     """Move a fake hand sideways by dx_total over a few frames. Returns the first swipe seen (or None)."""
