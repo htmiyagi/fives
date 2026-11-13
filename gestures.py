@@ -261,6 +261,131 @@ class FingerFlickDetector:
         return None
 
 
+# ---- ↺ spin: the ✌️ fingertips draw a fast circle --------------------------------------------------------
+SPIN_MAX_STEP = math.radians(90)   # a real circle turns ~10-40° per frame; a bigger jump = cutting across the middle
+
+
+def winding_degrees(path) -> float:
+    """How far a path turns around its own middle, in degrees. Counterclockwise AS YOU SEE IT = positive.
+    Like counting how far a dog's leash wraps round a pole: a wiggle back and forth cancels itself out.
+    The middle is the center of the box around the path (more accurate than the average for part-circles)."""
+    if len(path) < 3:
+        return 0.0
+    xs, ys = [x for x, _ in path], [y for _, y in path]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    total, before = 0.0, None
+    for x, y in path:
+        angle = math.atan2(-(y - cy), x - cx)            # minus: the picture's y grows DOWN, flip it so up is up
+        if before is not None:
+            step = (angle - before + math.pi) % (2 * math.pi) - math.pi   # wrap to -180..180°: crossing ±180 isn't a 360 jump
+            if abs(step) <= SPIN_MAX_STEP:      # bigger = the path cut across its middle (a wave): no direction
+                total += step
+        before = angle
+    return math.degrees(total)
+
+
+def path_radius(path) -> float:
+    """The average distance from the path's middle (same middle as winding_degrees)."""
+    xs, ys = [x for x, _ in path], [y for _, y in path]
+    middle = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+    return sum(distance(p, middle) for p in path) / len(path)
+
+
+def path_roundness(path) -> float:
+    """The box around the path: short side ÷ long side. A circle ≈ 1, an oval 0.5, a side-to-side wave ≈ 0.1."""
+    xs, ys = [x for x, _ in path], [y for _, y in path]
+    width, height = max(xs) - min(xs), max(ys) - min(ys)
+    return min(width, height) / (max(width, height) or 1e-6)
+
+
+SPIN_WHY = {
+    "turn": "not enough circle in time: spin faster / rounder, or lower SPIN_TURN, raise SPIN_SECONDS",
+    "small": "circle too small: make it bigger, or lower SPIN_MIN_RADIUS",
+    "flat": "too flat, more of a wave than a circle: make it rounder, or lower SPIN_ROUNDNESS",
+    "cooldown": "too soon after the last spin (SPIN_COOLDOWN)",
+}
+
+
+def spin_report(attempt, turn: float, min_radius: float) -> str:
+    """One debug line for a finished spin attempt: (peak turn in degrees, radius then, why code) vs the thresholds."""
+    peak, radius, code = attempt
+    arrow = "↺" if peak > 0 else "↻"
+    why = f"  ({SPIN_WHY[code]})" if code else "  (FIRED)"
+    return (f"spin {arrow} reached {abs(peak):.0f} of {turn:g}° (circle {radius:.2f}, need {min_radius:g} hand sizes)"
+            + why)
+
+
+class SpinDetector:
+    """Spots a fast ✌️ circle: the index + middle fingertips go (almost) all the way round within `seconds`.
+
+    Feed it every frame with update(t, points), and miss(t) on frames with no hand. It answers "ccw"
+    (counterclockwise as you see it), "cw", or None. The picture must be mirrored (eyes.py flips it), so the
+    circle you see yourself draw is the one it measures.
+
+    When in doubt, no spin: it needs the ✌️, at least `turn` degrees of turning inside the last `seconds`
+    (that's what makes it FAST), a circle at least `min_radius` hand sizes big (not jitter), and no spin in
+    the last `cooldown`.
+    """
+
+    def __init__(self, turn=300.0, seconds=0.8, min_radius=0.2, cooldown=1.0, grace=0.1, pose_factor=1.1,
+                 roundness=0.4):
+        self.turn, self.seconds, self.min_radius, self.roundness = turn, seconds, min_radius, roundness
+        self.cooldown, self.grace, self.pose_factor = cooldown, grace, pose_factor
+        self.trail = deque()          # (time, x, y, hand size) of the fingertips' middle, for the last `seconds`
+        self.last_seen = -1e9         # the last frame with a ✌️
+        self.last_spin = -1e9
+        self.peak = (0.0, 0.0, None)  # this attempt's biggest turn, the circle size then, and why it didn't fire
+        self.last_attempt = None      # ...the attempt that just ended (for the debug print), or None
+
+    def _end_attempt(self) -> None:
+        if self.peak[0] != 0:
+            self.last_attempt = self.peak
+        self.peak = (0.0, 0.0, None)
+
+    def reset(self) -> None:
+        self._end_attempt()
+        self.trail.clear()
+
+    def miss(self, t: float) -> None:
+        """A frame with no hand (or no ✌️). Short gaps (a blurry frame mid-spin) are forgiven."""
+        if t - self.last_seen > self.grace:
+            self.reset()
+
+    def _why_not(self, turned: float, path, t: float):
+        """The first check that fails ("turn", "small", "flat", "cooldown"), or None if it passes them all."""
+        if abs(turned) < self.turn:
+            return "turn"
+        if path_radius(path) < self.min_radius:
+            return "small"
+        if path_roundness(path) < self.roundness:
+            return "flat"
+        if t - self.last_spin < self.cooldown:
+            return "cooldown"
+        return None
+
+    def update(self, t: float, points):
+        if not two_finger_pose(points, self.pose_factor):
+            self.miss(t)
+            return None
+        self.miss(t)                                     # the ✌️ was gone too long: start over
+        self.last_seen = t
+        x, y = average_point(points, FLICK_TIPS)
+        self.trail.append((t, x, y, hand_size(points)))
+        while t - self.trail[0][0] > self.seconds:
+            self.trail.popleft()
+        size = sum(s for *_, s in self.trail) / len(self.trail)
+        path = [(px / size, py / size) for _, px, py, _ in self.trail]   # in hand sizes: near or far, same numbers
+        turned = winding_degrees(path)
+        why = self._why_not(turned, path, t)
+        if abs(turned) > abs(self.peak[0]):
+            self.peak = (turned, path_radius(path), why)
+        if why is not None:
+            return None
+        self.last_spin = t
+        self.reset()                                     # a fresh circle is needed for the next one
+        return "ccw" if turned > 0 else "cw"
+
+
 class FlickDetector:
     """Spots a quick sideways swipe of an open hand (or of another hand shape: pass `pose`).
 

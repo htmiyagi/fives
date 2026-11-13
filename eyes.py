@@ -755,6 +755,8 @@ def main() -> None:
 
     # ✌️ finger flick while locked on = put that window away; a finger flick back = undo (FINGER_FLICK_* in config).
     finger_flick = score_gestures.make_finger_flick() if lock is not None else None
+    # ✌️ ↺ spin: only listens and prints for now (SPIN_* in config). Wired to "restart the song" in a later PR.
+    spin = score_gestures.make_spin() if getattr(config, "SPIN", False) else None
     # The FIVES window's flip-back is more forgiving: diagonal flicks and a moving palm count (HUB_UNDO_* in config).
     # It watches every frame (so it's warmed up), but only counts while you're bringing the FIVES window back.
     hub_undo_flick = None
@@ -766,7 +768,21 @@ def main() -> None:
     def undo_seconds(name):
         """How long you have to flick a window back. The FIVES window gets longer (it hides everything)."""
         return getattr(config, "HUB_UNDO_SECONDS", 2.0) if name == actions.HUB else config.POINT_UNDO_SECONDS
-    undo = None         # (window, the swipe that put it away, until when): the "oops, bring it back" second
+
+    def check_spin(t, points):
+        """✌️ ↺ spin: feed it this frame and print what it saw. Off while drawing (you draw circles on purpose)."""
+        if draw_mode:
+            spin.reset()
+            spin.last_attempt = None
+            return
+        spun = spin.update(t, points)
+        attempt = spin.last_attempt
+        if getattr(config, "SPIN_DEBUG", False) and attempt and abs(attempt[0]) >= 0.4 * config.SPIN_TURN:
+            print(g.spin_report(attempt, config.SPIN_TURN, config.SPIN_MIN_RADIUS) + f"  [{fps:.0f} fps]")
+        spin.last_attempt = None
+        if spun:
+            print(f"spin {'↺ counterclockwise' if spun == 'ccw' else '↻ clockwise'}: seen! (not wired to anything yet)")
+    undo = None        # (window, the swipe that put it away, until when): the "oops, bring it back" second
     restore = []        # windows to bring back next frame (the same path as clicking their wedge)
 
     def put_away(swipe, target):
@@ -1049,6 +1065,8 @@ def main() -> None:
                     loose = hub_undo_flick.update(t, points)
                     if loose and undoing(t) and undo[0] == actions.HUB:
                         flicked = loose                 # bringing the FIVES window back: the forgiving one counts
+                if spin is not None:
+                    check_spin(t, points)
                 locked = None
                 if lock is not None:                    # ✌️ pointing at a FIVES window locks on to it (it glows)
                     pointing = g.two_finger_pose(points, config.POINT_FACTOR)
@@ -1293,6 +1311,8 @@ def main() -> None:
                 recorder.add(stamp)                     # no hand this frame
                 if finger_flick is not None:
                     finger_flick.miss(stamp)
+                if spin is not None:
+                    spin.miss(stamp)
                 if lock is not None:
                     aim_at(lock.update(stamp, None))    # no hand: the lock lets go after POINT_LOCK_HOLD
                 if flick is not None:

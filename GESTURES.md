@@ -108,6 +108,7 @@ Keep this up to date. It's how collisions get avoided.
 | pinch | thumb + index together | grab FIVES windows (reserved) | exists for clicking today; to be moved to grabbing |
 | skip | not decided yet | skip | **next: Hoyu designs it** |
 | previous / replay | not decided yet | previous / restart | after skip |
+| spin | ✌️ fingertips draw a fast circle (~300° in 0.8 s), round, not tiny; off in draw mode | ↺ counterclockwise: restart the song (Spotify only; nothing + a Terminal message if Spotify isn't open). ↻ clockwise: free for later | detector built, prints only; Hoyu records + tunes next, then wire. Settings `SPIN_*` |
 
 Note: `config.py` sets `FLICK_DISTANCE` three times (1.6, then 1.2, then 0.7) and the last one
 wins. Clean that up (with Hoyu's say on the value) before adding more swipes.
