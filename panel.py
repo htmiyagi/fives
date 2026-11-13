@@ -28,6 +28,8 @@ from panel_logic import CUT, H, MAX_W, MIN_W, W, Layout, clamp_width, ellipsize,
 TINT_ALPHA = 0.36          # how dark the glass is. Lower = see more of Chrome behind it (0.2 to 0.8)
 TEXT_ALPHA = 0.80          # how solid the writing is. Lower = more see-through hologram (0.5 to 1.0)
 GLOW = 1.0                 # neon glow strength. 0 = off, 1 = normal, 1.6 = very bright
+TARGETED_GLOW = 1.4        # glow multiplier while you point at the window with two fingers (1 = no change)
+TARGET_BAND = 6            # ...plus a soft band of light this wide along the edge (0 = none)
 SWEEP = True               # a faint bright line sliding down the window, like a hologram scan
 CLOSE_QUITS_SPOTIFY = True # the CLOSE button also closes the Spotify app (the hotkey only hides the window)
 MARGIN = 24                # distance from the top-right corner of the screen
@@ -48,6 +50,7 @@ class State:
     art_url = ""
     hover = None               # name of the button under the pointer
     scale = 1.0                # window size / design size (glow radius follows it)
+    boost = 1.0                # glow multiplier: TARGETED_GLOW while eyes.py says you're pointing at us
     refresh = threading.Event()
 
 
@@ -158,8 +161,9 @@ def main() -> None:
         NSGraphicsContext.saveGraphicsState()
         sh = NSShadow.alloc().init()
         sh.setShadowOffset_((0, 0))
-        sh.setShadowBlurRadius_(radius * GLOW * S.scale)
-        sh.setShadowColor_(color(c, min(1.0, alpha * GLOW)))
+        strength = GLOW * S.boost                     # brighter while you point at the window
+        sh.setShadowBlurRadius_(radius * strength * S.scale)
+        sh.setShadowColor_(color(c, min(1.0, alpha * strength)))
         sh.set()
 
     def glow_off():
@@ -334,6 +338,8 @@ def main() -> None:
                     do(hit[0], hit[1])
 
         def mouseUp_(self, event):
+            if getattr(self, "mode", None) in ("move", "resize"):
+                controller.report_frame()                  # we moved or grew: tell eyes.py
             self.mode = None
 
         def drawRect_(self, dirty):
@@ -375,6 +381,8 @@ def main() -> None:
         # --- frame: neon outer line, thin inner line, white armor edges on two corners
         poly(frame_points(1), stroke=BLUE, width=1.8, stroke_alpha=1.0, glow=9)
         poly(frame_points(6), stroke=BLUE, width=0.8, stroke_alpha=0.5)
+        if S.boost > 1.0:                                         # pointed at: a soft band of light along the edge
+            poly(frame_points(1), stroke=BLUE, width=TARGET_BAND, stroke_alpha=0.35, glow=22)
         c = CUT
         line(c, 1, 1, c, WHITE, 3, 0.95, glow=7)                  # top-left cut edge
         line(W - c, H - 1, W - 1, H - c, WHITE, 3, 0.95, glow=7)  # bottom-right cut edge
@@ -537,16 +545,28 @@ def main() -> None:
             self.win.setFrame_display_(NSMakeRect(origin[0], top - height, width, height), True)
             self.apply_shape(width)
 
+        def report_frame(self):
+            """Tell eyes.py where we are (top-left origin, like mouse positions), so it knows when you point at us."""
+            try:
+                f = self.win.frame()
+                main_h = NSScreen.screens()[0].frame().size.height
+                top = main_h - (f.origin.y + f.size.height)      # Cocoa counts y from the bottom; flip it
+                print("frame %.0f %.0f %.0f %.0f" % (f.origin.x, top, f.size.width, f.size.height), flush=True)
+            except Exception as e:
+                print("panel: couldn't report the window frame:", e, flush=True)
+
         def show(self):
             self.visible = True
             self.win.setAlphaValue_(0.0)
             self.win.orderFrontRegardless()
             self.win.animator().setAlphaValue_(1.0)
             S.refresh.set()
+            self.report_frame()
 
         def hide(self):
             self.visible = False
             self.win.orderOut_(None)
+            print("hidden", flush=True)                    # eyes.py: we're not on screen any more
 
         def toggle(self):
             self.hide() if self.visible else self.show()
@@ -576,6 +596,9 @@ def main() -> None:
                 AppHelper.callAfter(controller.show)
             elif word == "hide":
                 AppHelper.callAfter(controller.hide)
+            elif word in ("glow 1", "glow 0"):             # you're pointing at us (1), or not any more (0)
+                S.boost = TARGETED_GLOW if word == "glow 1" else 1.0
+                AppHelper.callAfter(lambda: controller.view.setNeedsDisplay_(True))
             elif word == "quit":
                 break
         AppHelper.callAfter(app.terminate_, None)      # stdin closed = eyes.py is gone: quit too
