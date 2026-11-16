@@ -22,7 +22,7 @@ Also read, when the task touches them:
   one-line comment on anything non-obvious. Don't be clever for its own sake.
 - **Always work on a branch and open a PR.** Never commit or push to `main` directly.
 - **Never commit my personal files:** `config.py` (my local settings differ from
-  GitHub's), `settings.json`, `spotify_keys.json`, or anything in `.gitignore`.
+  GitHub's), `settings.json`, `spotify_keys.json`, `google_keys.json`, or anything in `.gitignore`.
   Add files by name (`git add hub.py ...`), never `git add -A` or `git add .`.
 - **Every PR description must explain, in plain English:**
   1. What you changed and why
@@ -138,6 +138,9 @@ I'm on the Pro plan, so be efficient:
 - `spotify_connect.py` — the CONNECT SPOTIFY walkthrough's logic and sign-in (PKCE, no
   app secret). `hub.py` draws it. The key is saved in `spotify_keys.json` (personal,
   gitignored). Open it from anywhere with `spotify_connect.start()`.
+- `google_connect.py` — the GOOGLE CALENDAR sign-in (Settings row: CONNECT / SWITCH ACCOUNT /
+  DISCONNECT). One shared Google client (Hoyu's project, published unverified, so the key never
+  expires after 7 days). The key is saved in `google_keys.json` (personal, gitignored).
 - `config.py` — the hand-tracking numbers and other settings. New hand-tracking
   settings go here, not hard-coded elsewhere.
 - `gestures.py` — pure geometry (pinch, smoothing, screen mapping). No camera or

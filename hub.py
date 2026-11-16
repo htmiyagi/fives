@@ -18,6 +18,7 @@ hub.py - the FIVES window: ONE window with big tabs, like a browser. Everything 
   SETTINGS  everyday choices (default music app...), saved by settings.py. Just the layout for now:
             the choices are remembered, but nothing uses them yet.
             CONNECT SPOTIFY opens a walkthrough on this tab (the steps and sign-in live in spotify_connect.py).
+            GOOGLE CALENDAR's CONNECT does the same for Google (google_connect.py).
 
 Started by the ENGAGE button in launcher.py.   Run by hand:  python hub.py
 Drag empty glass to move the window. Drag the three dots in the bottom-right corner to resize it.
@@ -51,6 +52,7 @@ from Quartz import (CGContextBeginTransparencyLayer, CGContextEndTransparencyLay
                     kCGBlendModeDestinationIn)   # Quartz comes with pyautogui, nothing new to install
 
 import eyes_link
+import google_connect as gc
 import settings
 import spotify_connect as sp
 import wheel                   # only for its wedge shapes and icons (the WHEEL page's preview)
@@ -97,6 +99,7 @@ ROWS = [                         # the SETTINGS tab: (settings.py key, title, wh
     ("wheel_order", "WHEEL", ""),        # not a pick-one: an EDIT button that opens the WHEEL page
     ("music_app", "DEFAULT MUSIC APP", "Which app \"play some music\" opens"),
     ("spotify", "SPOTIFY", ""),          # not a saved choice: a CONNECT button (see spotify_connect.py)
+    ("google", "GOOGLE CALENDAR", ""),   # not a saved choice: CONNECT / SWITCH ACCOUNT / DISCONNECT (google_connect.py)
     ("play_order", "PLAY ORDER", "What \"play my playlist\" does if you don't say"),
     ("ask_first", "ASK ME FIRST", "Show me before anything is sent or deleted"),
     ("speak_replies", "TALK BACK", "Read answers out loud"),
@@ -380,6 +383,13 @@ def icon(name, cx, cy, c):
     elif name == "spotify":                              # three sound waves
         for k, (rx, ry) in enumerate(((13, 5.5), (10, 4.5), (7, 3.5))):
             stroke(ellipse(cx, cy - 6 + k * 7 + ry, rx, ry, 0, 200, 340, 12), c, 2.4 - k * 0.3)
+    elif name == "google":                               # a calendar page with two rings on top
+        stroke([(cx - 11, cy - 8), (cx + 11, cy - 8), (cx + 11, cy + 10), (cx - 11, cy + 10), (cx - 11, cy - 8)], c, 1.8)
+        stroke([(cx - 11, cy - 2), (cx + 11, cy - 2)], c, 1.6)
+        for dx in (-5, 5):
+            stroke([(cx + dx, cy - 12), (cx + dx, cy - 5)], c, 2.2)
+        oval(cx - 4, cy + 4, 1.8, fill=c)
+        oval(cx + 3, cy + 4, 1.8, fill=c)
     elif name == "speak_replies":                        # sound bars
         for dx, half in ((-9, 5), (-3, 11), (3, 7), (9, 3)):
             stroke([(cx + dx, cy - half), (cx + dx, cy + half)], c, 2.4)
@@ -525,6 +535,12 @@ def connect_rect(i):
     return (x + w - 24 - 170, y + (h - 40) / 2, 170, 40)
 
 
+def second_rect(i):
+    """A second button just left of connect_rect (GOOGLE CALENDAR's SWITCH ACCOUNT / RECONNECT)."""
+    x, y, w, h = connect_rect(i)
+    return (x - 12 - w, y, w, h)
+
+
 def wrap(s, size, width, bold=False, kern=0.8):
     """Break a sentence into lines that fit in `width`."""
     lines, line = [], ""
@@ -666,13 +682,102 @@ def draw_spotify():
             text_mid(line, W / 2, y, 15, PALE, False, 0.8)
             y += 22
 
-    for name, rect, label, main in spotify_buttons():
+    draw_walk_buttons(spotify_buttons())
+
+
+def draw_walk_buttons(buttons):
+    """A walkthrough's buttons: (name, rectangle, label, is it the main one). Shared by Spotify and Google."""
+    for name, rect, label, main in buttons:
         hov = S.hover == name
         plate(rect, fill=BLUE, fill_alpha=(0.75 if hov else 0.50) if main else (0.30 if hov else 0.06),
               stroke=WHITE if hov else SKY, width=1.3, stroke_alpha=0.95 if (hov or main) else 0.5,
               glow=(10 if hov else 5) if main else 0)
         size = 15 if rect[3] >= 46 else 13
         text_mid(label, rect[0] + rect[2] / 2, rect[1] + (rect[3] - size * 1.28) / 2, size, WHITE if (hov or main) else PALE, True, 2.5)
+
+
+# ---- the GOOGLE CALENDAR walkthrough (CONNECT / SWITCH ACCOUNT on its row) ----------------------------
+def google_buttons():
+    """The Google walkthrough's buttons for the step it is on: (name, rectangle, label, is it the main one)."""
+    step = gc.setup.step
+    main = (W - 56 - 300, 550, 300, 50)
+    out = [("gc:cancel", (56, 556, 130, 44), "CLOSE", False)]
+    if step in ("waiting", "error"):
+        out.append(("gc:back", (198, 556, 130, 44), "BACK", False))
+    if step == "intro":
+        out.append(("gc:signin", main, "SIGN IN WITH GOOGLE", True))
+    elif step == "done":
+        out.append(("gc:finish", main, "DONE", True))
+    elif step == "error":
+        out.append(("gc:retry", main, "TRY AGAIN", True))
+    return out
+
+
+def draw_google():
+    """The GOOGLE CALENDAR walkthrough. What happens on each button press is in google_connect.press()."""
+    page()
+    step, st = gc.setup.step, gc.setup
+    text("SWITCH GOOGLE ACCOUNT" if st.switch else "CONNECT GOOGLE CALENDAR", 58, 104, 26, WHITE, True, 6.0, glow=6)
+    if step == "intro":
+        items = [(178, "Press SIGN IN. Your browser opens Google's own page. Pick your Google account."),
+                 (244, "Google says \"Google hasn't verified this app\". That's expected for a free student"),
+                 (310, "Tick the box to see and edit your calendar events, then click Continue."),
+                 (376, "Done. You only do this once: FIVES stays signed in on this Mac.")]
+        for n, (y, line) in enumerate(items):
+            oval(78, y + 14, 15, fill=NAVY, fill_alpha=0.55, stroke=SKY, width=1.5, stroke_alpha=0.9)
+            text_mid(str(n + 1), 78, y + 4, 15, WHITE, True, 0.0)
+            text(line, 110, y + 3, 16, WHITE, False, 0.8)
+        text("project. Click Advanced, then Go to (the app's name).", 110, 270, 16, WHITE, False, 0.8)
+        paragraph("FIVES never sees your password. It may only see and edit events, and the key it gets is saved only "
+                  "on this Mac.", 110, 446, 640, 13, GREY)
+    elif step == "waiting":
+        spinner(W / 2, 250)
+        text_mid("WAITING FOR YOU TO CLICK CONTINUE IN THE BROWSER", W / 2, 296, 14, SKY, True, 3.0)
+        text_mid("On \"Google hasn't verified this app\": click Advanced, then Go to.", W / 2, 344, 14, PALE, False, 0.8, 0.85)
+    elif step == "done":
+        badge(W / 2, 216, "tick")
+        text_mid("CONNECTED", W / 2, 268, 22, WHITE, True, 5.0, glow=6)
+        text_mid("as " + (st.email or "your Google account"), W / 2, 302, 16, SKY, False, 1.0)
+        n = st.events
+        text_mid("Signed in, but your calendar didn't answer yet. It should work in a moment." if n is None else
+                 f"You have {n} event{'' if n == 1 else 's'} in the next 7 days.", W / 2, 346, 15, PALE, False, 0.8)
+        text_mid("The CALENDAR tab that shows them comes next.", W / 2, 370, 15, PALE, False, 0.8, 0.8)
+    elif step == "error":
+        badge(W / 2, 216, "bang")
+        text_mid("THAT DIDN'T WORK", W / 2, 268, 20, WHITE, True, 4.0)
+        y = 310
+        for line in wrap(st.error[:1].upper() + st.error[1:] + ".", 15, 700):
+            text_mid(line, W / 2, y, 15, PALE, False, 0.8)
+            y += 22
+    draw_walk_buttons(google_buttons())
+
+
+def google_row_buttons(i):
+    """The GOOGLE CALENDAR row's buttons: (name, rectangle, label, is it the main one)."""
+    if not gc.connected():
+        return [("google:connect", connect_rect(i), "CONNECT", True)]
+    if gc.needs_reconnect():
+        return [("google:reconnect", second_rect(i), "RECONNECT", True),
+                ("google:disconnect", connect_rect(i), "DISCONNECT", False)]
+    return [("google:switch", second_rect(i), "SWITCH ACCOUNT", False),
+            ("google:disconnect", connect_rect(i), "DISCONNECT", False)]
+
+
+def google_row_about():
+    email = gc.who()
+    if not email and not gc.connected():
+        return "See and add events by typing. Sign in with Google once"
+    if gc.needs_reconnect():
+        return "Google signed FIVES out. Press RECONNECT"
+    return f"Connected as {email or 'your Google account'}"
+
+
+def draw_row_buttons(buttons):
+    for name, rect, label, main in buttons:
+        hov = S.hover == name
+        plate(rect, fill=BLUE, fill_alpha=(0.75 if hov else 0.50) if main else (0.30 if hov else 0.06),
+              stroke=WHITE if hov else SKY, width=1.3, stroke_alpha=0.95, glow=(10 if hov else 5) if main else 0)
+        text_mid(label, rect[0] + rect[2] / 2, rect[1] + 12, 13, WHITE, True, 2.5)
 
 
 # ---- the WHEEL page (EDIT on the WHEEL row): reorder, remove and add the wheel's wedges --------------
@@ -850,6 +955,8 @@ def hovered_wedge(order):
 def draw_settings():
     if sp.setup.step != "closed":
         return draw_spotify()
+    if gc.setup.step != "closed":
+        return draw_google()
     if S.wheel_page:
         return draw_wheel_page()
     page()
@@ -878,9 +985,12 @@ def draw_settings():
             plate(rect, fill=BLUE, fill_alpha=0.75 if hov else 0.50, stroke=WHITE if hov else SKY, width=1.3,
                   stroke_alpha=0.95, glow=10 if hov else 5)
             text_mid("EDIT", rect[0] + rect[2] / 2, rect[1] + 12, 13, WHITE, True, 2.5)
+        if key == "google":
+            about = google_row_about()
+            draw_row_buttons(google_row_buttons(i))
         text(title, x + 90, y + 13, 19, WHITE, True, 3.0)
         text(about, x + 91, y + 42, 14, PALE, False, 0.8, 0.9)
-        if key in ("spotify", "wheel_order"):
+        if key in ("spotify", "wheel_order", "google"):
             continue
         if key in settings.CHOICES:
             rects = choice_rects(i, key)
@@ -1029,6 +1139,8 @@ def buttons():
         out.append(("restart", RESTART))
     if S.tab == "settings" and sp.setup.step != "closed":
         out += [(name, rect) for name, rect, _, _ in spotify_buttons()]
+    elif S.tab == "settings" and gc.setup.step != "closed":
+        out += [(name, rect) for name, rect, _, _ in google_buttons()]
     elif S.tab == "settings" and S.wheel_page:
         out += wheel_page_buttons()
     elif S.tab == "settings":
@@ -1036,6 +1148,8 @@ def buttons():
         for i, (key, _, _) in enumerate(ROWS):
             if key == "spotify":
                 rows.append(("connect", connect_rect(i)))
+            elif key == "google":
+                rows += [(name, rect) for name, rect, _, _ in google_row_buttons(i)]
             elif key == "wheel_order":
                 rows.append(("wheel:edit", connect_rect(i)))
             elif key in settings.CHOICES:
@@ -1077,6 +1191,11 @@ def press(name):
         sp.disconnect() if sp.connected() else sp.start()
     elif name.startswith("sp:"):
         sp.press(name[3:])
+    elif name.startswith("google:"):                      # the GOOGLE CALENDAR row's buttons
+        what = name[7:]
+        gc.disconnect() if what == "disconnect" else gc.start(switch=what == "switch")
+    elif name.startswith("gc:"):
+        gc.press(name[3:])
     elif name.startswith("wheel:"):
         press_wheel(name[6:])
     elif name.startswith("set:"):
@@ -1174,7 +1293,7 @@ class HubView(NSView):
 
     def scrollWheel_(self, event):
         """Trackpad, mouse wheel, or the hand-tracking scroll: moves the SETTINGS rows."""
-        if S.tab != "settings" or sp.setup.step != "closed" or S.wheel_page:
+        if S.tab != "settings" or sp.setup.step != "closed" or gc.setup.step != "closed" or S.wheel_page:
             return
         dy = event.scrollingDeltaY()
         scroll_settings(-dy if event.hasPreciseScrollingDeltas() else -dy * WHEEL_STEP)
@@ -1280,7 +1399,7 @@ class Ticker(NSObject):
                 redraw = True
         elif S.tab == "brain":
             redraw = True                   # the orb breathes
-        elif sp.setup.step != "closed" or int(time.time() * 30) % 15 == 0:
+        elif sp.setup.step != "closed" or gc.setup.step != "closed" or int(time.time() * 30) % 15 == 0:
             redraw = True                   # the walkthrough moves on by itself (clipboard, sign-in)
         if redraw and seen:
             S.dirty = False
